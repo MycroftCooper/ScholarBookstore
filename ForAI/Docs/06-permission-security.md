@@ -15,8 +15,10 @@
 | 查看自己的通知 | 否 | 是 | 是 | 是 |
 | 标记自己的通知已读 | 否 | 是 | 是 | 是 |
 | 审核文章 | 否 | 否 | 是 | 是 |
+| 隐藏或恢复文章 | 否 | 否 | 是 | 是 |
 | 管理版块 | 否 | 否 | 否 | 是 |
 | 管理用户角色 | 否 | 否 | 否 | 是 |
+| 隐藏或恢复任意评论 | 否 | 否 | 是 | 是 |
 | 删除任意评论或回复 | 否 | 否 | 是 | 是 |
 
 ## 2. 文章状态流转
@@ -44,6 +46,8 @@ rejected -> pending_review
 - `reviewer` 和 `admin` 可将 `pending_review` 审核为 `published` 或 `rejected`。
 - 拒绝必须填写 `review_note`。
 - 作者可在个人中心查看自己的 `pending_review`、`rejected` 文章。
+- 作者可编辑自己的 `draft`、`pending_review`、`rejected` 文章。
+- `rejected` 文章编辑保存后必须重新进入 `pending_review`，等待再次审核。
 - 游客只能查看 `published` 文章。
 - 已发布文章是否允许作者编辑为 TODO，默认不允许直接编辑。
 - 如果未来允许编辑已发布文章，必须重新进入审核流程。
@@ -129,8 +133,8 @@ rejected -> pending_review
 
 第一版上传仅支持图片：
 
-- 允许 MIME：`image/jpeg`、`image/png`、`image/webp`、`image/gif`。TODO：是否允许 GIF 后续确认。
-- 默认最大文件大小：TODO，建议 5MB。
+- 允许 MIME：`image/jpeg`、`image/png`、`image/webp`、`image/gif`。
+- 默认最大文件大小：5MB。
 - 文件名必须由后端生成，不使用用户原始文件名作为存储文件名。
 - 存储路径不得包含用户可控的 `../` 等路径片段。
 - 后端必须同时校验扩展名和 MIME。

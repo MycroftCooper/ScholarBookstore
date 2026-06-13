@@ -15,6 +15,7 @@ var validStatuses = map[string]struct{}{
 
 type ArticleRepository interface {
 	ListPublished(ctx context.Context, moduleSlug string, page int, pageSize int) ([]Article, int64, error)
+	ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Article, int64, error)
 	FindPublishedByID(ctx context.Context, id int64) (Article, error)
 	ListMine(ctx context.Context, authorID int64, status string, page int, pageSize int) ([]Article, int64, error)
 	Create(ctx context.Context, input CreateArticleInput) (Article, error)
@@ -23,6 +24,8 @@ type ArticleRepository interface {
 	ListPendingReview(ctx context.Context, page int, pageSize int) ([]Article, int64, error)
 	Approve(ctx context.Context, id int64, input ReviewArticleInput) (Article, error)
 	Reject(ctx context.Context, id int64, input ReviewArticleInput) (Article, error)
+	Archive(ctx context.Context, id int64) (Article, error)
+	RestoreArchived(ctx context.Context, id int64) (Article, error)
 }
 
 type Service struct {
@@ -36,6 +39,22 @@ func NewService(repo ArticleRepository) *Service {
 func (s *Service) ListPublished(ctx context.Context, moduleSlug string, page int, pageSize int) (Page, error) {
 	page, pageSize = normalizePage(page, pageSize)
 	items, total, err := s.repo.ListPublished(ctx, strings.TrimSpace(moduleSlug), page, pageSize)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Number: page, Size: pageSize, Total: total, Articles: ToPublicList(items, false)}, nil
+}
+
+func (s *Service) ListAdmin(ctx context.Context, status string, page int, pageSize int) (Page, error) {
+	page, pageSize = normalizePage(page, pageSize)
+	status = strings.TrimSpace(status)
+	if status != "" {
+		if _, ok := validStatuses[status]; !ok {
+			return Page{}, ErrInvalidInput
+		}
+	}
+
+	items, total, err := s.repo.ListAdmin(ctx, status, page, pageSize)
 	if err != nil {
 		return Page{}, err
 	}
@@ -67,6 +86,18 @@ func (s *Service) ListMine(ctx context.Context, authorID int64, status string, p
 		return Page{}, err
 	}
 	return Page{Number: page, Size: pageSize, Total: total, Articles: ToPublicList(items, true)}, nil
+}
+
+func (s *Service) FindMineByID(ctx context.Context, id int64, authorID int64) (PublicArticle, error) {
+	if id <= 0 || authorID <= 0 {
+		return PublicArticle{}, ErrNotFound
+	}
+
+	item, err := s.repo.FindByIDForAuthor(ctx, id, authorID)
+	if err != nil {
+		return PublicArticle{}, err
+	}
+	return ToPublic(item, true), nil
 }
 
 func (s *Service) Create(ctx context.Context, input CreateArticleInput) (PublicArticle, error) {
@@ -158,6 +189,28 @@ func (s *Service) Reject(ctx context.Context, id int64, reviewerID int64, review
 		return PublicArticle{}, err
 	}
 	return ToPublic(item, true), nil
+}
+
+func (s *Service) Archive(ctx context.Context, id int64) (PublicArticle, error) {
+	if id <= 0 {
+		return PublicArticle{}, ErrNotFound
+	}
+	item, err := s.repo.Archive(ctx, id)
+	if err != nil {
+		return PublicArticle{}, err
+	}
+	return ToPublic(item, false), nil
+}
+
+func (s *Service) RestoreArchived(ctx context.Context, id int64) (PublicArticle, error) {
+	if id <= 0 {
+		return PublicArticle{}, ErrNotFound
+	}
+	item, err := s.repo.RestoreArchived(ctx, id)
+	if err != nil {
+		return PublicArticle{}, err
+	}
+	return ToPublic(item, false), nil
 }
 
 func validArticleText(title string, summary string, content string) bool {

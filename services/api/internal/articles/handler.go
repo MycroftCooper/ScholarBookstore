@@ -138,6 +138,32 @@ func (h *Handler) ListMine(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, result.Articles, pageMeta(result))
 }
 
+func (h *Handler) DetailMine(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+
+	id, idOK := parseIDParam(r, "id")
+	if !idOK {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		return
+	}
+
+	article, err := h.service.FindMineByID(r.Context(), id, user.ID)
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, article, nil)
+}
+
 func (h *Handler) UpdateOwn(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -196,6 +222,67 @@ func (h *Handler) ListPendingReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, result.Articles, pageMeta(result))
+}
+
+func (h *Handler) ListAdmin(w http.ResponseWriter, r *http.Request) {
+	page, pageSize, ok := parsePagination(r)
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
+		return
+	}
+
+	result, err := h.service.ListAdmin(r.Context(), r.URL.Query().Get("status"), page, pageSize)
+	if errors.Is(err, ErrInvalidInput) {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "状态参数不合法", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, result.Articles, pageMeta(result))
+}
+
+func (h *Handler) Archive(w http.ResponseWriter, r *http.Request) {
+	h.changeVisibility(w, r, true)
+}
+
+func (h *Handler) RestoreArchived(w http.ResponseWriter, r *http.Request) {
+	h.changeVisibility(w, r, false)
+}
+
+func (h *Handler) changeVisibility(w http.ResponseWriter, r *http.Request, archive bool) {
+	id, idOK := parseIDParam(r, "id")
+	if !idOK {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		return
+	}
+
+	var (
+		article PublicArticle
+		err     error
+	)
+	if archive {
+		article, err = h.service.Archive(r.Context(), id)
+	} else {
+		article, err = h.service.RestoreArchived(r.Context(), id)
+	}
+
+	if errors.Is(err, ErrConflict) {
+		response.Error(w, http.StatusConflict, "CONFLICT", "当前文章状态不允许操作", nil)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, article, nil)
 }
 
 func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {

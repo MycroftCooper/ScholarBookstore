@@ -105,6 +105,22 @@ func (h *Handler) ListMine(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, result.Comments, pageMeta(result))
 }
 
+func (h *Handler) ListAdmin(w http.ResponseWriter, r *http.Request) {
+	page, pageSize, valid := parsePagination(r)
+	if !valid {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
+		return
+	}
+
+	result, err := h.service.ListAdmin(r.Context(), page, pageSize)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, result.Comments, pageMeta(result))
+}
+
 func (h *Handler) Reply(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -163,6 +179,43 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]bool{"ok": true}, nil)
+}
+
+func (h *Handler) Hide(w http.ResponseWriter, r *http.Request) {
+	h.setVisibility(w, r, true)
+}
+
+func (h *Handler) Show(w http.ResponseWriter, r *http.Request) {
+	h.setVisibility(w, r, false)
+}
+
+func (h *Handler) setVisibility(w http.ResponseWriter, r *http.Request, hide bool) {
+	commentID, idOK := parseIDParam(r, "id")
+	if !idOK {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "评论不存在", nil)
+		return
+	}
+
+	var (
+		comment PublicComment
+		err     error
+	)
+	if hide {
+		comment, err = h.service.Hide(r.Context(), commentID)
+	} else {
+		comment, err = h.service.Show(r.Context(), commentID)
+	}
+
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "评论不存在", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, comment, nil)
 }
 
 func parsePagination(r *http.Request) (int, int, bool) {

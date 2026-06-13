@@ -2,7 +2,7 @@
 
 ## 1. 总体约定
 
-- 第一版只做 Web/PWA。
+- 当前 MVP 只做 Web。PWA 安装与离线能力后续迭代。
 - 前端使用 Next.js App Router。
 - 产品结构为 `网站 -> 版块 -> 文章`。
 - 第一版不做论坛、帖子详情页、主题帖列表。
@@ -262,12 +262,11 @@
 - 投稿列表。
 - 状态筛选。
 - 审核拒绝原因。
-- 编辑入口。TODO：编辑规则以后端状态约束为准。
+- 编辑入口。
 
 调用 API：
 
 - `GET /api/v1/me/articles`
-- `PATCH /api/v1/articles/{id}`
 
 登录要求：
 
@@ -277,7 +276,39 @@
 
 - 无投稿时展示投稿入口。
 
-## 9. 我的评论页 `/me/comments`
+## 9. 投稿编辑页 `/me/articles/[id]/edit`
+
+用途：
+
+- 作者编辑自己的未发布投稿。
+- 被拒投稿修改后重新提交审核。
+
+展示内容：
+
+- 当前状态。
+- 被拒文章的审核说明。
+- 标题、摘要、Markdown 正文。
+- 图片上传入口。
+- 版块只读展示。
+
+调用 API：
+
+- `GET /api/v1/me/articles/{id}`
+- `PATCH /api/v1/articles/{id}`
+- `POST /api/v1/uploads/article-images`
+
+登录要求：
+
+- 必须登录。
+- 仅作者可访问自己的投稿。
+
+状态规则：
+
+- `draft`、`pending_review`、`rejected` 可编辑。
+- `rejected` 保存后重新进入 `pending_review`。
+- `published`、`archived` 不允许直接编辑。
+
+## 10. 我的评论页 `/me/comments`
 
 用途：
 
@@ -303,11 +334,11 @@
 
 - 无评论时展示“暂无评论”。
 
-## 10. 我的通知页 `/me/notifications`
+## 11. 我的通知页 `/me/notifications`
 
 用途：
 
-- 用户查看被回复通知。
+- 用户查看文章评论通知和评论回复通知。
 
 展示内容：
 
@@ -321,7 +352,7 @@
 - 查看通知。
 - 标记单条已读。
 - 全部标记已读。
-- 跳转到对应文章评论区。TODO：评论锚点方案后续确认。
+- 跳转到对应文章。评论锚点方案后续迭代。
 
 调用 API：
 
@@ -337,7 +368,7 @@
 
 - 无通知时展示“暂无通知”。
 
-## 11. 管理后台 `/admin`
+## 12. 管理后台 `/admin`
 
 用途：
 
@@ -345,29 +376,37 @@
 
 展示内容：
 
-- 待审核文章入口。
-- 版块管理入口。
-- 评论管理入口。TODO：第一版评论管理范围需确认。
-- 用户角色管理入口。TODO：是否 MVP 提供 UI 后续确认。
+- 文章审核 tab。
+- 版块管理 tab。
+- 内容管理 tab。
 
 调用 API：
 
 - `GET /api/v1/admin/articles/reviews`
 - `POST /api/v1/admin/articles/{id}/approve`
 - `POST /api/v1/admin/articles/{id}/reject`
+- `GET /api/v1/admin/articles`
+- `POST /api/v1/admin/articles/{id}/archive`
+- `POST /api/v1/admin/articles/{id}/restore`
 - `POST /api/v1/admin/modules`
 - `PATCH /api/v1/admin/modules/{id}`
+- `GET /api/v1/admin/comments`
+- `POST /api/v1/admin/comments/{id}/hide`
+- `POST /api/v1/admin/comments/{id}/show`
 - `DELETE /api/v1/comments/{id}`
 
 登录要求：
 
 - 必须登录。
-- 仅 reviewer、admin 可进入审核页。
-- 仅 admin 可进入版块和用户管理页。
+- reviewer、admin 可进入文章审核和内容管理。
+- 仅 admin 可进入版块管理。
+- MVP 暂不提供用户角色管理 UI。
 
 空状态：
 
 - 无待审核文章时展示“暂无待审核投稿”。
+- 无文章时展示“暂无文章”。
+- 无评论时展示“暂无评论”。
 
 错误状态：
 
@@ -378,4 +417,3 @@
 
 - 管理后台可移动端访问，但优先保证桌面体验。
 - 表格在小屏可改为列表卡片。
-

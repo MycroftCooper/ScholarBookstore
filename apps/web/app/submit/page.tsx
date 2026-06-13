@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { createArticle } from "@/lib/api/articles";
 import { getCurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { listModules, type ModuleSummary } from "@/lib/api/modules";
+import { uploadArticleImage } from "@/lib/api/uploads";
 
 export default function SubmitPage() {
   const [modules, setModules] = useState<ModuleSummary[]>([]);
@@ -16,8 +17,11 @@ export default function SubmitPage() {
   const [contentMd, setContentMd] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [error, setError] = useState("");
   const [createdId, setCreatedId] = useState<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -68,6 +72,55 @@ export default function SubmitPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setUploadingImage(true);
+    setError("");
+    try {
+      const image = await uploadArticleImage(file);
+      insertMarkdownImage(file.name, image.url);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError("图片上传失败，请稍后重试");
+      }
+    } finally {
+      setUploadingImage(false);
+      event.target.value = "";
+    }
+  }
+
+  function insertMarkdownImage(filename: string, url: string) {
+    const alt = filename.replace(/\.[^.]+$/, "") || "图片";
+    const snippet = `![${alt}](${url})`;
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setContentMd((current) => `${current}${current ? "\n\n" : ""}${snippet}`);
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    setContentMd((current) => {
+      const prefix = current.slice(0, start);
+      const suffix = current.slice(end);
+      const before = prefix && !prefix.endsWith("\n") ? "\n\n" : "";
+      const after = suffix && !suffix.startsWith("\n") ? "\n\n" : "";
+      return `${prefix}${before}${snippet}${after}${suffix}`;
+    });
+
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      const nextCursor = start + snippet.length;
+      textarea.setSelectionRange(nextCursor, nextCursor);
+    });
   }
 
   return (
@@ -142,18 +195,35 @@ export default function SubmitPage() {
                   />
                 </label>
 
-                <label className="mb-5 block">
-                  <span className="mb-2 block text-sm font-medium text-stone-700">
-                    Markdown 正文
-                  </span>
+                <div className="mb-5">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-stone-700">
+                    <label htmlFor="contentMd">Markdown 正文</label>
+                    <button
+                      type="button"
+                      disabled={uploadingImage}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-9 rounded-md border border-stone-300 bg-white px-3 text-sm font-medium text-stone-700 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {uploadingImage ? "上传中..." : "上传图片"}
+                    </button>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={handleImageChange}
+                    className="hidden"
+                  />
                   <textarea
+                    id="contentMd"
+                    ref={textareaRef}
                     value={contentMd}
                     onChange={(event) => setContentMd(event.target.value)}
                     required
                     rows={12}
                     className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
                   />
-                </label>
+                </div>
 
                 {error && (
                   <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

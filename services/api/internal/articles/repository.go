@@ -58,6 +58,46 @@ func (r *Repository) ListPublished(ctx context.Context, moduleSlug string, page 
 	return items, total, nil
 }
 
+func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Article, int64, error) {
+	args := []interface{}{}
+	filter := "a.deleted_at is null"
+	if status != "" {
+		args = append(args, status)
+		filter += fmt.Sprintf(" and a.status = $%d", len(args))
+	}
+
+	countQuery := fmt.Sprintf(`
+		select count(*)
+		from articles a
+		where %s
+	`, filter)
+
+	var total int64
+	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count admin articles: %w", err)
+	}
+
+	args = append(args, pageSize, (page-1)*pageSize)
+	query := fmt.Sprintf(`
+		select
+			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
+			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
+			a.published_at, a.created_at, a.updated_at
+		from articles a
+		join modules m on m.id = a.module_id
+		join users u on u.id = a.author_id
+		where %s
+		order by a.created_at desc, a.id desc
+		limit $%d offset $%d
+	`, filter, len(args)-1, len(args))
+
+	items, err := r.scanMany(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 func (r *Repository) FindPublishedByID(ctx context.Context, id int64) (Article, error) {
 	const query = `
 		select
@@ -155,6 +195,10 @@ func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, in
 			title = coalesce($3, title),
 			summary = coalesce($4, summary),
 			content_md = coalesce($5, content_md),
+			status = case when status = 'rejected' then 'pending_review' else status end,
+			reviewed_by = case when status = 'rejected' then null else reviewed_by end,
+			reviewed_at = case when status = 'rejected' then null else reviewed_at end,
+			review_note = case when status = 'rejected' then '' else review_note end,
 			updated_at = now()
 		where id = $1
 			and author_id = $2
@@ -238,6 +282,49 @@ func (r *Repository) Reject(ctx context.Context, id int64, input ReviewArticleIn
 	`
 
 	return r.review(ctx, query, id, input)
+}
+
+func (r *Repository) Archive(ctx context.Context, id int64) (Article, error) {
+	const query = `
+		update articles
+		set status = 'archived', updated_at = now()
+		where id = $1 and status = 'published' and deleted_at is null
+		returning id
+	`
+	return r.updateStatus(ctx, query, id)
+}
+
+func (r *Repository) RestoreArchived(ctx context.Context, id int64) (Article, error) {
+	const query = `
+		update articles
+		set status = 'published', updated_at = now()
+		where id = $1 and status = 'archived' and deleted_at is null
+		returning id
+	`
+	return r.updateStatus(ctx, query, id)
+}
+
+func (r *Repository) updateStatus(ctx context.Context, query string, id int64) (Article, error) {
+	var updatedID int64
+	err := r.db.QueryRow(ctx, query, id).Scan(&updatedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Article{}, ErrConflict
+	}
+	if err != nil {
+		return Article{}, fmt.Errorf("update article status: %w", err)
+	}
+
+	const findQuery = `
+		select
+			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
+			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
+			a.published_at, a.created_at, a.updated_at
+		from articles a
+		join modules m on m.id = a.module_id
+		join users u on u.id = a.author_id
+		where a.id = $1 and a.deleted_at is null
+	`
+	return r.scanOne(ctx, findQuery, updatedID)
 }
 
 func (r *Repository) review(ctx context.Context, query string, id int64, input ReviewArticleInput) (Article, error) {

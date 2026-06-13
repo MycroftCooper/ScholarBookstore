@@ -99,6 +99,36 @@ func (r *Repository) ListMine(ctx context.Context, authorID int64, page int, pag
 	return items, total, nil
 }
 
+func (r *Repository) ListAdmin(ctx context.Context, page int, pageSize int) ([]Comment, int64, error) {
+	const countQuery = `
+		select count(*)
+		from comments
+		where deleted_at is null
+	`
+	var total int64
+	if err := r.db.QueryRow(ctx, countQuery).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count admin comments: %w", err)
+	}
+
+	const query = `
+		select
+			c.id, c.article_id, c.author_id, u.username, c.parent_id,
+			c.reply_to_user_id, ru.username, c.content, c.visibility,
+			c.created_at, c.updated_at
+		from comments c
+		join users u on u.id = c.author_id
+		left join users ru on ru.id = c.reply_to_user_id
+		where c.deleted_at is null
+		order by c.created_at desc, c.id desc
+		limit $1 offset $2
+	`
+	items, err := r.scanMany(ctx, query, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 func (r *Repository) CreateTopLevel(ctx context.Context, authorID int64, articleID int64, content string) (Comment, error) {
 	const query = `
 		insert into comments (article_id, author_id, content)
@@ -206,6 +236,24 @@ func (r *Repository) Delete(ctx context.Context, id int64, userID int64, canDele
 	return nil
 }
 
+func (r *Repository) SetVisibility(ctx context.Context, id int64, visibility string) (Comment, error) {
+	const query = `
+		update comments
+		set visibility = $2, updated_at = now()
+		where id = $1 and deleted_at is null
+		returning id
+	`
+	var updatedID int64
+	err := r.db.QueryRow(ctx, query, id, visibility).Scan(&updatedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Comment{}, ErrNotFound
+	}
+	if err != nil {
+		return Comment{}, fmt.Errorf("set comment visibility: %w", err)
+	}
+	return r.findAny(ctx, r.db, updatedID)
+}
+
 func (r *Repository) FindVisibleByID(ctx context.Context, id int64) (Comment, error) {
 	return r.findVisible(ctx, r.db, id)
 }
@@ -229,6 +277,27 @@ func (r *Repository) findVisible(ctx context.Context, q queryer, id int64) (Comm
 		join users u on u.id = c.author_id
 		left join users ru on ru.id = c.reply_to_user_id
 		where c.id = $1 and c.visibility = 'visible' and c.deleted_at is null
+	`
+	item, err := scanComment(q.QueryRow(ctx, query, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Comment{}, ErrNotFound
+	}
+	if err != nil {
+		return Comment{}, err
+	}
+	return item, nil
+}
+
+func (r *Repository) findAny(ctx context.Context, q queryer, id int64) (Comment, error) {
+	const query = `
+		select
+			c.id, c.article_id, c.author_id, u.username, c.parent_id,
+			c.reply_to_user_id, ru.username, c.content, c.visibility,
+			c.created_at, c.updated_at
+		from comments c
+		join users u on u.id = c.author_id
+		left join users ru on ru.id = c.reply_to_user_id
+		where c.id = $1 and c.deleted_at is null
 	`
 	item, err := scanComment(q.QueryRow(ctx, query, id))
 	if errors.Is(err, pgx.ErrNoRows) {

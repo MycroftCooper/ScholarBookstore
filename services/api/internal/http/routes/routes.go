@@ -18,6 +18,7 @@ import (
 	"scholarbookstore/services/api/internal/http/response"
 	"scholarbookstore/services/api/internal/modules"
 	"scholarbookstore/services/api/internal/notifications"
+	apiuploads "scholarbookstore/services/api/internal/uploads"
 	"scholarbookstore/services/api/internal/users"
 )
 
@@ -56,6 +57,11 @@ func New(deps Dependencies) http.Handler {
 	commentRepo := comments.NewRepository(deps.DB)
 	commentService := comments.NewService(commentRepo, notificationRepo)
 	commentHandler := comments.NewHandler(commentService)
+	uploadRepo := apiuploads.NewRepository(deps.DB)
+	uploadService := apiuploads.NewService(deps.Config, uploadRepo)
+	uploadHandler := apiuploads.NewHandler(uploadService)
+
+	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(deps.Config.UploadDir))))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/healthz", handleHealthz(deps.DB))
@@ -84,12 +90,14 @@ func New(deps Dependencies) http.Handler {
 			r.Post("/comments/{id}/replies", commentHandler.Reply)
 			r.Delete("/comments/{id}", commentHandler.Delete)
 			r.Get("/me/articles", articleHandler.ListMine)
+			r.Get("/me/articles/{id}", articleHandler.DetailMine)
 			r.Get("/me/comments", commentHandler.ListMine)
 			r.Get("/me/notifications", notificationHandler.ListMine)
 			r.Get("/me/notifications/unread-count", notificationHandler.UnreadCount)
 			r.Post("/me/notifications/{id}/read", notificationHandler.MarkRead)
 			r.Post("/me/notifications/read-all", notificationHandler.MarkAllRead)
 			r.Patch("/articles/{id}", articleHandler.UpdateOwn)
+			r.Post("/uploads/article-images", uploadHandler.UploadArticleImage)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -102,9 +110,15 @@ func New(deps Dependencies) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
 			r.Use(authmiddleware.RequireRole("reviewer", "admin"))
+			r.Get("/admin/articles", articleHandler.ListAdmin)
 			r.Get("/admin/articles/reviews", articleHandler.ListPendingReview)
 			r.Post("/admin/articles/{id}/approve", articleHandler.Approve)
 			r.Post("/admin/articles/{id}/reject", articleHandler.Reject)
+			r.Post("/admin/articles/{id}/archive", articleHandler.Archive)
+			r.Post("/admin/articles/{id}/restore", articleHandler.RestoreArchived)
+			r.Get("/admin/comments", commentHandler.ListAdmin)
+			r.Post("/admin/comments/{id}/hide", commentHandler.Hide)
+			r.Post("/admin/comments/{id}/show", commentHandler.Show)
 		})
 	})
 

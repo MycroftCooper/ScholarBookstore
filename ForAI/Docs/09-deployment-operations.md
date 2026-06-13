@@ -116,7 +116,7 @@ goose -dir services/api/migrations postgres "$DATABASE_URL" down
 
 - 设置 `NEXT_PUBLIC_API_BASE_URL` 指向生产后端。
 - 确认 CORS 和 Cookie 跨域配置。
-- 构建前运行类型检查和 lint。TODO：具体命令项目初始化后确定。
+- 构建前至少运行 `npm.cmd run typecheck`。
 
 注意：
 
@@ -172,6 +172,7 @@ pg_dump "$DATABASE_URL" > backup.sql
 - `uploads` 必须纳入服务器备份。
 - 数据库备份和图片备份需要尽量同一时间点。
 - 不要把用户上传文件提交到 Git。
+- 仓库通过 `services/api/uploads/.gitignore` 保留上传目录占位，并忽略真实上传文件。
 
 后续迁移：
 

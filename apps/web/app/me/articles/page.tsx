@@ -92,6 +92,16 @@ export default function MyArticlesPage() {
                   {article.reviewNote}
                 </p>
               )}
+              {["draft", "pending_review", "rejected"].includes(article.status) && (
+                <div className="mt-4">
+                  <Link
+                    href={`/me/articles/${article.id}/edit`}
+                    className="inline-flex h-9 items-center rounded-md border border-stone-300 px-3 text-sm font-medium text-stone-700 hover:border-moss hover:text-moss"
+                  >
+                    {article.status === "rejected" ? "修改并重提" : "编辑投稿"}
+                  </Link>
+                </div>
+              )}
             </div>
           ))}
         </div>

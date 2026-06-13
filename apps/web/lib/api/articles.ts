@@ -57,8 +57,37 @@ export function listMyArticles(status?: ArticleSummary["status"]) {
   return apiRequest<ArticleSummary[]>(`/me/articles${query ? `?${query}` : ""}`);
 }
 
+export function getMyArticle(id: number) {
+  return apiRequest<ArticleSummary>(`/me/articles/${id}`);
+}
+
+export function updateMyArticle(
+  id: number,
+  input: {
+    title: string;
+    summary: string;
+    contentMd: string;
+  },
+) {
+  return apiRequest<ArticleSummary>(`/articles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
 export function listPendingReviews() {
   return apiRequest<ArticleSummary[]>("/admin/articles/reviews");
+}
+
+export function listAdminArticles(status?: ArticleSummary["status"]) {
+  const params = new URLSearchParams();
+  if (status) {
+    params.set("status", status);
+  }
+  const query = params.toString();
+  return apiRequest<ArticleSummary[]>(
+    `/admin/articles${query ? `?${query}` : ""}`,
+  );
 }
 
 export function approveArticle(id: number, reviewNote: string) {
@@ -72,5 +101,17 @@ export function rejectArticle(id: number, reviewNote: string) {
   return apiRequest<ArticleSummary>(`/admin/articles/${id}/reject`, {
     method: "POST",
     body: JSON.stringify({ reviewNote }),
+  });
+}
+
+export function archiveArticle(id: number) {
+  return apiRequest<ArticleSummary>(`/admin/articles/${id}/archive`, {
+    method: "POST",
+  });
+}
+
+export function restoreArticle(id: number) {
+  return apiRequest<ArticleSummary>(`/admin/articles/${id}/restore`, {
+    method: "POST",
   });
 }

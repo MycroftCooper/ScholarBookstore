@@ -264,7 +264,21 @@
 - `UNAUTHORIZED`
 - `VALIDATION_ERROR`
 
-### 4.5 更新自己的未发布文章
+### 4.5 我的单篇投稿
+
+- Method：`GET`
+- Path：`/api/v1/me/articles/{id}`
+- 登录：是
+- 角色：user、reviewer、admin
+
+响应：当前用户自己的单篇投稿，包含 Markdown 正文和审核说明。
+
+错误：
+
+- `UNAUTHORIZED`
+- `NOT_FOUND`
+
+### 4.6 更新自己的未发布文章
 
 - Method：`PATCH`
 - Path：`/api/v1/articles/{id}`
@@ -276,6 +290,8 @@
 约束：
 
 - 仅作者可更新。
+- 允许更新 `draft`、`pending_review`、`rejected`。
+- `rejected` 文章更新后重新进入 `pending_review`，并清空旧审核说明。
 - 已发布文章是否允许编辑为 TODO，默认不允许直接编辑。
 
 错误：
@@ -285,6 +301,26 @@
 - `CONFLICT`
 
 ## 5. 审核接口
+
+### 5.0 后台文章列表
+
+- Method：`GET`
+- Path：`/api/v1/admin/articles`
+- 登录：是
+- 角色：reviewer、admin
+
+查询参数：
+
+- `status`：可选，筛选文章状态。
+- `page`
+- `pageSize`
+
+响应：后台文章列表，用于内容管理。
+
+错误：
+
+- `VALIDATION_ERROR`
+- `FORBIDDEN`
 
 ### 5.1 待审核文章列表
 
@@ -335,6 +371,41 @@
 }
 ```
 
+### 5.4 隐藏已发布文章
+
+- Method：`POST`
+- Path：`/api/v1/admin/articles/{id}/archive`
+- 登录：是
+- 角色：reviewer、admin
+
+约束：
+
+- 仅允许 `published -> archived`。
+- `archived` 文章不在公开文章列表和详情中展示。
+
+错误：
+
+- `NOT_FOUND`
+- `CONFLICT`
+- `FORBIDDEN`
+
+### 5.5 恢复隐藏文章
+
+- Method：`POST`
+- Path：`/api/v1/admin/articles/{id}/restore`
+- 登录：是
+- 角色：reviewer、admin
+
+约束：
+
+- 仅允许 `archived -> published`。
+
+错误：
+
+- `NOT_FOUND`
+- `CONFLICT`
+- `FORBIDDEN`
+
 错误：
 
 - `VALIDATION_ERROR`
@@ -356,7 +427,7 @@
 - `page`
 - `pageSize`
 
-响应：文章下可见评论。返回结构应包含顶级评论及其回复，或返回扁平列表并带 `parentId`。TODO：前端展示结构实现前确认。
+响应：文章下可见评论。当前返回扁平列表并带 `parentId`，前端按顶级评论和回复展示。
 
 错误：
 
@@ -450,6 +521,47 @@
 - `pageSize`
 
 响应：当前用户发表过的评论和回复。
+
+### 6.6 后台评论列表
+
+- Method：`GET`
+- Path：`/api/v1/admin/comments`
+- 登录：是
+- 角色：reviewer、admin
+
+响应：后台评论列表，包含可见和已隐藏评论，不包含已删除评论。
+
+错误：
+
+- `FORBIDDEN`
+
+### 6.7 隐藏评论
+
+- Method：`POST`
+- Path：`/api/v1/admin/comments/{id}/hide`
+- 登录：是
+- 角色：reviewer、admin
+
+效果：将评论 `visibility` 设置为 `hidden`。
+
+错误：
+
+- `NOT_FOUND`
+- `FORBIDDEN`
+
+### 6.8 恢复评论
+
+- Method：`POST`
+- Path：`/api/v1/admin/comments/{id}/show`
+- 登录：是
+- 角色：reviewer、admin
+
+效果：将评论 `visibility` 设置为 `visible`。
+
+错误：
+
+- `NOT_FOUND`
+- `FORBIDDEN`
 
 错误：
 
@@ -565,5 +677,5 @@
 约束：
 
 - 只允许图片 MIME。
-- 默认最大大小 TODO：建议 5MB，需确认。
+- 默认最大大小 5MB。
 - 文件扩展名和 MIME 必须双重校验。

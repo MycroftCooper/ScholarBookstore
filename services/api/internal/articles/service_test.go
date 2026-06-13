@@ -15,6 +15,10 @@ func (r *fakeArticleRepo) ListPublished(_ context.Context, _ string, _ int, _ in
 	return []Article{{ID: 1, Title: "已发布", Status: "published"}}, 1, nil
 }
 
+func (r *fakeArticleRepo) ListAdmin(_ context.Context, _ string, _ int, _ int) ([]Article, int64, error) {
+	return []Article{{ID: 1, Title: "已发布", Status: "published"}}, 1, nil
+}
+
 func (r *fakeArticleRepo) FindPublishedByID(_ context.Context, id int64) (Article, error) {
 	if id != 1 {
 		return Article{}, ErrNotFound
@@ -40,7 +44,7 @@ func (r *fakeArticleRepo) Create(_ context.Context, input CreateArticleInput) (A
 }
 
 func (r *fakeArticleRepo) FindByIDForAuthor(_ context.Context, _ int64, _ int64) (Article, error) {
-	return Article{}, nil
+	return Article{ID: 2, Title: "我的投稿", ContentMD: "正文", Status: "rejected", ReviewNote: "需要补图"}, nil
 }
 
 func (r *fakeArticleRepo) UpdateOwn(_ context.Context, id int64, authorID int64, input UpdateArticleInput) (Article, error) {
@@ -68,6 +72,14 @@ func (r *fakeArticleRepo) Approve(_ context.Context, id int64, input ReviewArtic
 
 func (r *fakeArticleRepo) Reject(_ context.Context, id int64, input ReviewArticleInput) (Article, error) {
 	return Article{ID: id, Title: "已拒绝", Status: "rejected", ReviewNote: input.ReviewNote}, nil
+}
+
+func (r *fakeArticleRepo) Archive(_ context.Context, id int64) (Article, error) {
+	return Article{ID: id, Title: "已隐藏", Status: "archived"}, nil
+}
+
+func (r *fakeArticleRepo) RestoreArchived(_ context.Context, id int64) (Article, error) {
+	return Article{ID: id, Title: "已恢复", Status: "published"}, nil
 }
 
 func TestCreateNormalizesInput(t *testing.T) {
@@ -112,6 +124,18 @@ func TestListMineRejectsInvalidStatus(t *testing.T) {
 	_, err := service.ListMine(context.Background(), 1, "unknown", 1, 20)
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestFindMineByIDReturnsOwnArticleContent(t *testing.T) {
+	service := NewService(&fakeArticleRepo{})
+
+	article, err := service.FindMineByID(context.Background(), 2, 9)
+	if err != nil {
+		t.Fatalf("find my article: %v", err)
+	}
+	if article.ID != 2 || article.ContentMD != "正文" || article.ReviewNote != "需要补图" {
+		t.Fatalf("unexpected article: %#v", article)
 	}
 }
 

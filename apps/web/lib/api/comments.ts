@@ -41,3 +41,19 @@ export function deleteComment(commentId: number) {
 export function listMyComments() {
   return apiRequest<CommentItem[]>("/me/comments");
 }
+
+export function listAdminComments() {
+  return apiRequest<CommentItem[]>("/admin/comments");
+}
+
+export function hideComment(commentId: number) {
+  return apiRequest<CommentItem>(`/admin/comments/${commentId}/hide`, {
+    method: "POST",
+  });
+}
+
+export function showComment(commentId: number) {
+  return apiRequest<CommentItem>(`/admin/comments/${commentId}/show`, {
+    method: "POST",
+  });
+}
