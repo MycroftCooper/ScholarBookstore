@@ -383,6 +383,12 @@
 - `UNAUTHORIZED`
 - `NOT_FOUND`
 
+约束：
+
+- 文章必须为 `published`。
+- 评论他人文章时，后端创建 `article_comment` 通知给文章作者。
+- 评论自己的文章时，不创建通知。
+
 ### 6.3 回复评论
 
 - Method：`POST`
@@ -465,6 +471,11 @@
 - `pageSize`
 
 响应：当前用户收到的通知。
+
+通知类型：
+
+- `article_comment`：文章收到顶级评论。
+- `comment_reply`：评论被回复。
 
 错误：
 
@@ -556,4 +567,3 @@
 - 只允许图片 MIME。
 - 默认最大大小 TODO：建议 5MB，需确认。
 - 文件扩展名和 MIME 必须双重校验。
-

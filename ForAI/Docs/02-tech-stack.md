@@ -119,6 +119,10 @@
 - 后端可无状态校验登录态。
 - 与 httpOnly Cookie 结合可降低前端 token 泄漏风险。
 
+实现依赖：
+
+- Go 后端使用 `github.com/golang-jwt/jwt/v5` 签发和验证 JWT。
+
 使用约束：
 
 - JWT 只放在 httpOnly Cookie。
@@ -208,4 +212,3 @@
 2. 在 `03-project-standards.md` 更新相关规范。
 3. 在 `09-deployment-operations.md` 更新部署和运维影响。
 4. 获得用户明确确认。
-

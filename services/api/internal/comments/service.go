@@ -1,0 +1,175 @@
+package comments
+
+import (
+	"context"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+
+	"scholarbookstore/services/api/internal/notifications"
+)
+
+type CommentRepository interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	ListByArticle(ctx context.Context, articleID int64, page int, pageSize int) ([]Comment, int64, error)
+	ListMine(ctx context.Context, authorID int64, page int, pageSize int) ([]Comment, int64, error)
+	CreateTopLevel(ctx context.Context, authorID int64, articleID int64, content string) (Comment, error)
+	FindPublishedArticleForComment(ctx context.Context, tx pgx.Tx, articleID int64) (CommentableArticle, error)
+	CreateTopLevelTx(ctx context.Context, tx pgx.Tx, authorID int64, articleID int64, content string) (Comment, error)
+	FindParentForReply(ctx context.Context, tx pgx.Tx, id int64) (ParentComment, error)
+	CreateReply(ctx context.Context, tx pgx.Tx, authorID int64, parent ParentComment, content string) (Comment, error)
+	Delete(ctx context.Context, id int64, userID int64, canDeleteAny bool) error
+}
+
+type NotificationRepository interface {
+	CreateCommentReply(ctx context.Context, tx pgx.Tx, input notifications.CreateCommentReplyInput) error
+	CreateArticleComment(ctx context.Context, tx pgx.Tx, input notifications.CreateArticleCommentInput) error
+}
+
+type Service struct {
+	comments      CommentRepository
+	notifications NotificationRepository
+}
+
+type Page struct {
+	Number   int
+	Size     int
+	Total    int64
+	Comments []PublicComment
+}
+
+func NewService(commentRepo CommentRepository, notificationRepo NotificationRepository) *Service {
+	return &Service{
+		comments:      commentRepo,
+		notifications: notificationRepo,
+	}
+}
+
+func (s *Service) ListByArticle(ctx context.Context, articleID int64, page int, pageSize int) (Page, error) {
+	if articleID <= 0 {
+		return Page{}, ErrNotFound
+	}
+	page, pageSize = normalizePage(page, pageSize)
+	items, total, err := s.comments.ListByArticle(ctx, articleID, page, pageSize)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Number: page, Size: pageSize, Total: total, Comments: ToPublicList(items)}, nil
+}
+
+func (s *Service) CreateTopLevel(ctx context.Context, authorID int64, articleID int64, content string) (PublicComment, error) {
+	content = strings.TrimSpace(content)
+	if authorID <= 0 || articleID <= 0 || !validContent(content) {
+		return PublicComment{}, ErrInvalidInput
+	}
+
+	tx, err := s.comments.Begin(ctx)
+	if err != nil {
+		return PublicComment{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	article, err := s.comments.FindPublishedArticleForComment(ctx, tx, articleID)
+	if err != nil {
+		return PublicComment{}, err
+	}
+
+	comment, err := s.comments.CreateTopLevelTx(ctx, tx, authorID, articleID, content)
+	if err != nil {
+		return PublicComment{}, err
+	}
+
+	if article.AuthorID != authorID {
+		if err := s.notifications.CreateArticleComment(ctx, tx, notifications.CreateArticleCommentInput{
+			RecipientID: article.AuthorID,
+			ActorID:     authorID,
+			ArticleID:   article.ID,
+			CommentID:   comment.ID,
+		}); err != nil {
+			return PublicComment{}, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return PublicComment{}, err
+	}
+
+	return ToPublic(comment), nil
+}
+
+func (s *Service) ListMine(ctx context.Context, authorID int64, page int, pageSize int) (Page, error) {
+	if authorID <= 0 {
+		return Page{}, ErrForbidden
+	}
+	page, pageSize = normalizePage(page, pageSize)
+	items, total, err := s.comments.ListMine(ctx, authorID, page, pageSize)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Number: page, Size: pageSize, Total: total, Comments: ToPublicList(items)}, nil
+}
+
+func (s *Service) Reply(ctx context.Context, authorID int64, parentID int64, content string) (PublicComment, error) {
+	content = strings.TrimSpace(content)
+	if authorID <= 0 || parentID <= 0 || !validContent(content) {
+		return PublicComment{}, ErrInvalidInput
+	}
+
+	tx, err := s.comments.Begin(ctx)
+	if err != nil {
+		return PublicComment{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	parent, err := s.comments.FindParentForReply(ctx, tx, parentID)
+	if err != nil {
+		return PublicComment{}, err
+	}
+
+	reply, err := s.comments.CreateReply(ctx, tx, authorID, parent, content)
+	if err != nil {
+		return PublicComment{}, err
+	}
+
+	if parent.AuthorID != authorID {
+		if err := s.notifications.CreateCommentReply(ctx, tx, notifications.CreateCommentReplyInput{
+			RecipientID: parent.AuthorID,
+			ActorID:     authorID,
+			ArticleID:   parent.ArticleID,
+			CommentID:   reply.ID,
+		}); err != nil {
+			return PublicComment{}, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return PublicComment{}, err
+	}
+
+	return ToPublic(reply), nil
+}
+
+func (s *Service) Delete(ctx context.Context, id int64, userID int64, role string) error {
+	if id <= 0 || userID <= 0 {
+		return ErrNotFound
+	}
+	canDeleteAny := role == "reviewer" || role == "admin"
+	return s.comments.Delete(ctx, id, userID, canDeleteAny)
+}
+
+func validContent(content string) bool {
+	return content != "" && len(content) <= 2000
+}
+
+func normalizePage(page int, pageSize int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return page, pageSize
+}

@@ -115,13 +115,37 @@ goose -dir services/api/migrations postgres "postgres://postgres:postgres123@loc
 
 ## 5. 项目启动
 
-当前仓库已经补齐目录、env 示例和初始 migration。前端 Next.js 项目与后端 Go module 初始化后，再补充正式启动命令。
+当前仓库已经补齐目录、env 示例、初始 migration 和后端 Go API 骨架。
 
 计划中的启动位置：
 
 ```text
 apps/web
 services/api
+```
+
+后端启动：
+
+```powershell
+cd services/api
+go run ./cmd/server
+```
+
+如遇到 Windows 用户目录 Go 缓存权限问题，可临时把缓存放到项目目录：
+
+```powershell
+cd services/api
+$env:GOCACHE=(Resolve-Path .).Path + '\.gocache'
+$env:GOMODCACHE=(Resolve-Path .).Path + '\.gomodcache'
+go run ./cmd/server
+```
+
+前端启动：
+
+```powershell
+cd apps/web
+npm.cmd install
+npm.cmd run dev
 ```
 
 计划中的本地服务地址：

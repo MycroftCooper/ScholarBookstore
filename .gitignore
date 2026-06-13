@@ -6,12 +6,15 @@
 
 # Dependencies
 node_modules/
+services/api/.gocache/
+services/api/.gomodcache/
 
 # Build outputs
 .next/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 
 # Logs
 *.log
