@@ -588,6 +588,8 @@
 
 - `article_comment`：文章收到顶级评论。
 - `comment_reply`：评论被回复。
+- `article_bookmark`：文章被收藏。
+- `followee_article`：关注的用户发布了新文章。
 
 错误：
 
@@ -637,9 +639,90 @@
 
 响应：更新数量。
 
-## 8. 上传接口
+## 8. 用户与关注接口
 
-### 8.1 上传文章图片
+### 8.1 作者公开信息
+
+- Method：`GET`
+- Path：`/api/v1/users/{username}`
+- 登录：否
+- 角色：guest、user、reviewer、admin
+
+响应：作者公开信息（头像、用户名、bio、学校、公司、已发布文章数、关注者数、正在关注数），以及已发布文章列表（分页）。
+
+查询参数：
+
+- `page`
+- `pageSize`
+
+错误：
+
+- `NOT_FOUND`：用户不存在。
+
+### 8.2 关注用户
+
+- Method：`POST`
+- Path：`/api/v1/me/following/{username}`
+- 登录：是
+- 角色：user、reviewer、admin
+
+约束：
+- 不能关注自己。
+- 不能重复关注（已关注时返回 `CONFLICT`）。
+- 目标用户必须存在且未被禁用。
+
+错误：
+
+- `UNAUTHORIZED`
+- `NOT_FOUND`
+- `CONFLICT`
+
+### 8.3 取关用户
+
+- Method：`DELETE`
+- Path：`/api/v1/me/following/{username}`
+- 登录：是
+- 角色：user、reviewer、admin
+
+约束：
+- 关注关系必须存在。
+
+错误：
+
+- `UNAUTHORIZED`
+- `NOT_FOUND`
+
+### 8.4 我关注的用户
+
+- Method：`GET`
+- Path：`/api/v1/me/following`
+- 登录：是
+- 角色：user、reviewer、admin
+
+查询参数：
+
+- `page`
+- `pageSize`
+
+响应：我关注的用户列表（用户头像、用户名、bio 摘要、关注时间），分页，按关注时间倒序。
+
+### 8.5 关注我的用户
+
+- Method：`GET`
+- Path：`/api/v1/me/followers`
+- 登录：是
+- 角色：user、reviewer、admin
+
+查询参数：
+
+- `page`
+- `pageSize`
+
+响应：关注我的用户列表（用户头像、用户名、bio 摘要、关注时间），分页，按关注时间倒序。
+
+## 9. 上传接口
+
+### 9.1 上传文章图片
 
 - Method：`POST`
 - Path：`/api/v1/uploads/article-images`

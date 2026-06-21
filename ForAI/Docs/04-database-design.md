@@ -57,6 +57,8 @@
 | --- | --- |
 | `comment_reply` | 评论被回复 |
 | `article_comment` | 文章收到顶级评论 |
+| `article_bookmark` | 文章被收藏 |
+| `followee_article` | 关注的用户发布了新文章 |
 
 ## 3. 表结构
 
@@ -237,9 +239,34 @@
 - 上传后未绑定文章的图片需要后台清理策略。TODO：清理周期后续确认。
 - 图片软删除不一定立即删除物理文件，物理清理策略后续确认。
 
+### 3.7 user_follows
+
+用户关注关系表。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 关注关系 ID |
+| `follower_id` | `bigint` | FK users(id), not null | 关注者 |
+| `followed_id` | `bigint` | FK users(id), not null | 被关注者 |
+| `created_at` | `timestamptz` | not null | 关注时间 |
+
+索引：
+
+- `unique index user_follows_unique on user_follows (follower_id, followed_id)`
+- `index user_follows_follower_idx on user_follows (follower_id, created_at desc)`
+- `index user_follows_followed_idx on user_follows (followed_id, created_at desc)`
+
+说明：
+
+- 不能关注自己（应用层校验）。
+- 不能重复关注同一用户（唯一索引保证）。
+- 取关时物理删除记录（不适用软删除，关注关系是轻量操作）。
+- 查询粉丝数/关注数使用 `count(*)` 配合索引。
+
 ## 4. 外键策略
 
 - 用户删除不级联删除文章、评论、通知，保留历史内容并使用软删除或禁用。
+- 用户删除时级联删除关注关系（`user_follows`，无论作为关注者还是被关注者）。
 - 版块删除不级联删除文章，默认软删除版块并隐藏入口。
 - 文章删除不物理删除评论和通知。
 - 父评论删除不物理删除子回复，展示时可显示“原评论已删除”或隐藏整组。TODO：具体展示策略后续确认。
