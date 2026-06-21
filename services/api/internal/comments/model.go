@@ -12,6 +12,9 @@ type Comment struct {
 	ReplyToUsername *string
 	Content         string
 	Visibility      string
+	UpVotes         int64
+	DownVotes       int64
+	MyVote          int
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -26,6 +29,10 @@ type PublicComment struct {
 	ReplyToUsername *string   `json:"replyToUsername"`
 	Content         string    `json:"content"`
 	Visibility      string    `json:"visibility"`
+	UpVotes         int64     `json:"upVotes"`
+	DownVotes       int64     `json:"downVotes"`
+	Score           int64     `json:"score"`
+	MyVote          int       `json:"myVote"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
@@ -52,6 +59,10 @@ func ToPublic(comment Comment) PublicComment {
 		ReplyToUsername: comment.ReplyToUsername,
 		Content:         comment.Content,
 		Visibility:      comment.Visibility,
+		UpVotes:         comment.UpVotes,
+		DownVotes:       comment.DownVotes,
+		Score:           comment.UpVotes - comment.DownVotes,
+		MyVote:          comment.MyVote,
 		CreatedAt:       comment.CreatedAt,
 		UpdatedAt:       comment.UpdatedAt,
 	}

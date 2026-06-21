@@ -20,6 +20,10 @@ type createCommentRequest struct {
 	Content string `json:"content"`
 }
 
+type voteCommentRequest struct {
+	Value int `json:"value"`
+}
+
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
@@ -36,7 +40,17 @@ func (h *Handler) ListByArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.ListByArticle(r.Context(), articleID, page, pageSize)
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+
+	result, err := h.service.ListByArticle(r.Context(), articleID, user.ID, r.URL.Query().Get("sort"), page, pageSize)
+	if errors.Is(err, ErrInvalidInput) {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "排序参数不合法", nil)
+		return
+	}
 	if errors.Is(err, ErrNotFound) {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
 		return
@@ -82,6 +96,41 @@ func (h *Handler) CreateTopLevel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusCreated, comment, nil)
+}
+
+func (h *Handler) Vote(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	commentID, idOK := parseIDParam(r, "id")
+	if !idOK {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "评论不存在", nil)
+		return
+	}
+
+	var req voteCommentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		return
+	}
+
+	comment, err := h.service.Vote(r.Context(), commentID, user.ID, req.Value)
+	if errors.Is(err, ErrInvalidInput) {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "赞踩参数不合法", nil)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "评论不存在", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, comment, nil)
 }
 
 func (h *Handler) ListMine(w http.ResponseWriter, r *http.Request) {

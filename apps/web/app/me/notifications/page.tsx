@@ -15,6 +15,12 @@ function notificationText(notification: NotificationItem) {
   if (notification.type === "article_comment") {
     return `${notification.actorUsername} 评论了你的文章`;
   }
+  if (notification.type === "article_bookmark") {
+    return `${notification.actorUsername} 收藏了你的文章`;
+  }
+  if (notification.type === "followee_article") {
+    return `你关注的 ${notification.actorUsername} 发布了新文章`;
+  }
   return `${notification.actorUsername} 回复了你的评论`;
 }
 

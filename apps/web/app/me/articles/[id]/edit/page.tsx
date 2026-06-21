@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { TagEditor } from "@/components/content/TagEditor";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import {
   getMyArticle,
@@ -12,9 +13,12 @@ import {
 import { ApiError } from "@/lib/api/client";
 import { uploadArticleImage } from "@/lib/api/uploads";
 
+type SubmitStatus = Extract<ArticleSummary["status"], "draft" | "pending_review">;
+
 const editableStatuses: ArticleSummary["status"][] = [
   "draft",
   "pending_review",
+  "published",
   "rejected",
 ];
 
@@ -33,8 +37,9 @@ export default function EditArticlePage() {
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [contentMd, setContentMd] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingStatus, setSavingStatus] = useState<SubmitStatus | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -42,7 +47,6 @@ export default function EditArticlePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const isEditable = article ? editableStatuses.includes(article.status) : false;
-  const isRejected = article?.status === "rejected";
 
   useEffect(() => {
     if (!Number.isInteger(articleId) || articleId <= 0) {
@@ -57,6 +61,7 @@ export default function EditArticlePage() {
         setTitle(item.title);
         setSummary(item.summary);
         setContentMd(item.contentMd ?? "");
+        setTags(item.tags?.map((tag) => tag.name) ?? []);
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -72,30 +77,42 @@ export default function EditArticlePage() {
       .finally(() => setLoading(false));
   }, [articleId]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveArticle(status: SubmitStatus) {
     if (!article || !isEditable) {
       return;
     }
 
-    setSaving(true);
     setError("");
     setSuccess("");
+    if (!title.trim()) {
+      setError("请填写标题");
+      return;
+    }
+    if (status === "pending_review" && !contentMd.trim()) {
+      setError("提交审核前请填写正文");
+      return;
+    }
 
+    setSavingStatus(status);
     try {
       const updated = await updateMyArticle(article.id, {
         title,
         summary,
         contentMd,
+        status,
+        tags,
       });
       setArticle(updated);
       setTitle(updated.title);
       setSummary(updated.summary);
       setContentMd(updated.contentMd ?? "");
+      setTags(updated.tags?.map((tag) => tag.name) ?? []);
       setSuccess(
-        isRejected
-          ? "已重新提交审核，状态已更新为待审核。"
-          : "投稿已保存。",
+        article.status === "published"
+          ? "修订版已提交审核，原文会继续公开展示。"
+          : status === "draft"
+            ? "草稿已保存。"
+            : "已提交审核。",
       );
     } catch (err) {
       if (err instanceof ApiError) {
@@ -104,7 +121,7 @@ export default function EditArticlePage() {
         setError("保存失败，请稍后重试");
       }
     } finally {
-      setSaving(false);
+      setSavingStatus(null);
     }
   }
 
@@ -158,6 +175,8 @@ export default function EditArticlePage() {
     });
   }
 
+  const isSaving = savingStatus !== null;
+
   return (
     <main className="min-h-screen bg-paper">
       <SiteHeader />
@@ -191,13 +210,16 @@ export default function EditArticlePage() {
         )}
 
         {article && (
-          <form
-            onSubmit={handleSubmit}
-            className="rounded-lg border border-stone-200 bg-white p-6 shadow-soft"
-          >
+          <div className="rounded-lg border border-stone-200 bg-white p-6 shadow-soft">
             {!isEditable && (
               <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                当前状态不允许编辑。已发布文章如需修改，需要后续单独设计重新审核流程。
+                当前状态不允许编辑。
+              </div>
+            )}
+
+            {article.status === "published" && (
+              <div className="mb-5 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                修改已发布文章会创建一个待审核修订版。审核通过前，原文会继续公开展示。
               </div>
             )}
 
@@ -224,7 +246,6 @@ export default function EditArticlePage() {
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 maxLength={160}
-                required
                 disabled={!isEditable}
                 className="h-11 w-full rounded-md border border-stone-300 bg-white px-3 outline-none focus:border-moss focus:ring-2 focus:ring-moss/15 disabled:bg-stone-100"
               />
@@ -243,6 +264,13 @@ export default function EditArticlePage() {
                 className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 outline-none focus:border-moss focus:ring-2 focus:ring-moss/15 disabled:bg-stone-100"
               />
             </label>
+
+            <div className="mb-4">
+              <span className="mb-2 block text-sm font-medium text-stone-700">
+                Tags
+              </span>
+              <TagEditor tags={tags} onChange={setTags} disabled={!isEditable} />
+            </div>
 
             <div className="mb-5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-stone-700">
@@ -268,7 +296,6 @@ export default function EditArticlePage() {
                 ref={textareaRef}
                 value={contentMd}
                 onChange={(event) => setContentMd(event.target.value)}
-                required
                 rows={14}
                 disabled={!isEditable}
                 className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15 disabled:bg-stone-100"
@@ -287,18 +314,31 @@ export default function EditArticlePage() {
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={!isEditable || saving}
-              className="h-11 rounded-md bg-moss px-5 font-medium text-white hover:bg-[#354f42] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {saving
-                ? "保存中..."
-                : isRejected
-                  ? "修改并重新提交审核"
-                  : "保存修改"}
-            </button>
-          </form>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                disabled={!isEditable || isSaving}
+                onClick={() => saveArticle("pending_review")}
+                className="h-11 rounded-md bg-moss px-5 font-medium text-white hover:bg-[#354f42] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingStatus === "pending_review"
+                  ? "提交中..."
+                  : article.status === "published"
+                    ? "提交修订审核"
+                    : "提交审核"}
+              </button>
+              {article.status === "draft" && (
+                <button
+                  type="button"
+                  disabled={!isEditable || isSaving}
+                  onClick={() => saveArticle("draft")}
+                  className="h-11 rounded-md border border-stone-300 bg-white px-5 font-medium text-stone-700 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingStatus === "draft" ? "保存中..." : "保存草稿"}
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </section>
     </main>

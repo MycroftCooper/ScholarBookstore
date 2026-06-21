@@ -1,28 +1,48 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ReactNode } from "react";
 
 type MarkdownContentProps = {
   content: string;
 };
 
+export type TocItem = {
+  id: string;
+  text: string;
+  level: number;
+};
+
 export function MarkdownContent({ content }: MarkdownContentProps) {
+  const slugCounts = new Map<string, number>();
+  const nextHeadingId = (children: ReactNode) =>
+    uniqueSlug(extractText(children), slugCounts);
+
   return (
     <div className="markdown-content text-base leading-8 text-stone-800">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h1 className="mb-4 mt-8 text-3xl font-semibold leading-tight text-ink">
+            <h1
+              id={nextHeadingId(children)}
+              className="scroll-mt-24 mb-4 mt-8 text-3xl font-semibold leading-tight text-ink"
+            >
               {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="mb-3 mt-7 text-2xl font-semibold leading-tight text-ink">
+            <h2
+              id={nextHeadingId(children)}
+              className="scroll-mt-24 mb-3 mt-7 text-2xl font-semibold leading-tight text-ink"
+            >
               {children}
             </h2>
           ),
           h3: ({ children }) => (
-            <h3 className="mb-2 mt-6 text-xl font-semibold leading-tight text-ink">
+            <h3
+              id={nextHeadingId(children)}
+              className="scroll-mt-24 mb-2 mt-6 text-xl font-semibold leading-tight text-ink"
+            >
               {children}
             </h3>
           ),
@@ -85,4 +105,59 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
       </ReactMarkdown>
     </div>
   );
+}
+
+export function buildMarkdownToc(content: string): TocItem[] {
+  const slugCounts = new Map<string, number>();
+  const items: TocItem[] = [];
+  let inFence = false;
+
+  for (const line of content.split(/\r?\n/)) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      continue;
+    }
+    const match = /^(#{1,3})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (!match) {
+      continue;
+    }
+    const text = match[2].trim();
+    if (!text) {
+      continue;
+    }
+    items.push({
+      id: uniqueSlug(text, slugCounts),
+      text,
+      level: match[1].length,
+    });
+  }
+
+  return items;
+}
+
+function extractText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(extractText).join("");
+  }
+  return "";
+}
+
+function uniqueSlug(text: string, counts: Map<string, number>) {
+  const base =
+    text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}\s-]/gu, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "section";
+  const count = counts.get(base) ?? 0;
+  counts.set(base, count + 1);
+  return count === 0 ? base : `${base}-${count + 1}`;
 }

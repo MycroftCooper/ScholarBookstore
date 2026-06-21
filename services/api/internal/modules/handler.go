@@ -17,6 +17,7 @@ type Handler struct {
 }
 
 type createModuleRequest struct {
+	DomainID    int64  `json:"domainId"`
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -25,6 +26,7 @@ type createModuleRequest struct {
 }
 
 type updateModuleRequest struct {
+	DomainID    *int64  `json:"domainId"`
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	SortOrder   *int    `json:"sortOrder"`
@@ -80,6 +82,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	module, err := h.service.Create(r.Context(), CreateModuleInput{
+		DomainID:    req.DomainID,
 		Slug:        req.Slug,
 		Name:        req.Name,
 		Description: req.Description,
@@ -116,6 +119,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	module, err := h.service.Update(r.Context(), id, UpdateModuleInput{
+		DomainID:    req.DomainID,
 		Name:        req.Name,
 		Description: req.Description,
 		SortOrder:   req.SortOrder,

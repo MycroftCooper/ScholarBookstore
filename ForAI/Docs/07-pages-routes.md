@@ -4,7 +4,7 @@
 
 - 当前 MVP 只做 Web。PWA 安装与离线能力后续迭代。
 - 前端使用 Next.js App Router。
-- 产品结构为 `网站 -> 版块 -> 文章`。
+- 产品结构为 `网站 -> 领域 -> 版块 -> 文章`。
 - 第一版不做论坛、帖子详情页、主题帖列表。
 - 页面需要适配移动端。
 - 所有需要登录的页面必须处理未登录状态。
@@ -19,7 +19,7 @@
 展示内容：
 
 - 顶部导航。
-- 版块入口。
+- 领域入口。
 - 最新文章列表。
 - 登录入口或用户菜单。
 - 通知入口，已登录时显示未读数量。
@@ -27,13 +27,14 @@
 用户操作：
 
 - 进入版块页。
+- 进入发现页。
 - 进入文章详情。
 - 登录、注册或投稿。
 - 已登录用户进入个人中心。
 
 调用 API：
 
-- `GET /api/v1/modules`
+- `GET /api/v1/domains`
 - `GET /api/v1/articles`
 - `GET /api/v1/me/notifications/unread-count`，仅登录后调用。
 
@@ -43,7 +44,7 @@
 
 空状态：
 
-- 无版块时展示“暂无版块”。
+- 无领域时展示“暂无领域”。
 - 无文章时展示“暂无文章”。
 
 错误状态：
@@ -52,8 +53,86 @@
 
 移动端要求：
 
-- 版块和文章列表单列展示。
+- 领域和文章列表单列展示。
 - 导航收敛为移动端菜单。
+
+## 2a. 发现页 `/discover`
+
+用途：
+
+- 搜索已发布文章，展示热点文章和随机文章。
+
+展示内容：
+
+- 关键词搜索框。
+- Tag 筛选框。
+- 最新、热点、随机排序切换。
+- 搜索结果列表。
+- 热点文章聚合。
+- 随机文章聚合。
+
+用户操作：
+
+- 按关键词搜索文章。
+- 按 Tag 筛选文章。
+- 点击文章进入详情页。
+- 点击文章 Tag 跳转或刷新 `/discover?tag={slug}`。
+
+调用 API：
+
+- `GET /api/v1/articles?q={keyword}&tag={slug}&sort={latest|hot|random}`
+
+登录要求：
+
+- 浏览不需要登录。
+
+空状态：
+
+- 无结果时展示“未找到相关文章”。
+
+错误状态：
+
+- API 失败时展示错误提示。
+
+## 3a. 领域列表 `/domain`
+
+用途：
+
+- 展示公开领域入口。
+
+调用 API：
+
+- `GET /api/v1/domains`
+
+登录要求：
+
+- 浏览不需要登录。
+
+空状态：
+
+- 无领域时展示“暂无领域”。
+
+## 3b. 领域详情 `/domain/[id]`
+
+用途：
+
+- 展示某个领域下的版块列表。
+
+调用 API：
+
+- `GET /api/v1/domains/{id}`
+
+登录要求：
+
+- 浏览不需要登录。
+
+空状态：
+
+- 领域下无版块时展示“该领域下暂无版块”。
+
+错误状态：
+
+- 领域不存在时展示 404。
 
 ## 3. 登录页 `/login`
 
@@ -132,17 +211,19 @@
 
 用途：
 
-- 阅读文章、查看评论、回复评论。
+- 阅读文章、查看评论、回复评论、对评论赞踩。
 
 展示内容：
 
 - 文章标题、作者、版块、发布时间。
+- Tags 与使用次数。
+- 文章目录（TOC），从 Markdown `h1`-`h3` 生成。
 - Markdown 正文。
 - 图片内容。
-- 评论列表。
-- 评论回复列表。
-- 评论输入框。
-- 回复评论输入框。
+- 登录后展示评论列表。
+- 登录后展示评论回复列表。
+- 登录后展示评论输入框。
+- 登录后展示回复评论输入框。
 
 用户操作：
 
@@ -154,15 +235,24 @@
 调用 API：
 
 - `GET /api/v1/articles/{id}`
-- `GET /api/v1/articles/{id}/comments`
+- `GET /api/v1/articles/{id}/comments`，仅登录后调用
 - `POST /api/v1/articles/{id}/comments`
 - `POST /api/v1/comments/{id}/replies`
 - `DELETE /api/v1/comments/{id}`
 
+当前实现说明：
+
+- 文章详情展示 `wordCount`、`readingMinutes`、`viewCount`、`revisionCount`。
+- 成功读取已发布文章详情后，后端递增 `viewCount`。
+- 文章详情展示标签，标签内显示 `usageCount`。
+- 登录用户评论区支持最新/最热排序。
+- 登录用户可对评论和回复点赞、点踩、取消或切换赞踩。
+- Markdown 标题自动生成锚点，右侧目录可跳转。
+
 登录要求：
 
 - 阅读不需要登录。
-- 评论和回复需要登录。
+- 查看评论、评论和回复需要登录。
 
 空状态：
 
@@ -202,8 +292,13 @@
 调用 API：
 
 - `GET /api/v1/users/{username}`
-- `POST /api/v1/me/following/{username}`
-- `DELETE /api/v1/me/following/{username}`
+- `GET /api/v1/users/{username}/follow`
+- `POST /api/v1/users/{username}/follow`
+- `DELETE /api/v1/users/{username}/follow`
+
+当前实现说明：
+
+- 作者资料、已发布文章列表、关注按钮和关注统计已接真实数据。
 
 登录要求：
 
@@ -215,7 +310,7 @@
 - 用户不存在时展示 404。
 - 无已发布文章时展示"该用户暂无文章"。
 
-## 6. 投稿页 `/submit`
+## 6. 投稿页 `/me/submit`
 
 用途：
 
@@ -226,6 +321,7 @@
 - 版块选择。
 - 标题输入。
 - 摘要输入。
+- Tag 输入，最多 9 个。
 - Markdown 编辑区。
 - 图片上传入口。
 - 预览区域。TODO：是否 MVP 做实时预览需确认。
@@ -235,6 +331,13 @@
 - `GET /api/v1/modules`
 - `POST /api/v1/uploads/article-images`
 - `POST /api/v1/articles`
+
+当前实现说明：
+
+- `POST /api/v1/articles` 可传 `status = draft` 保存草稿。
+- `POST /api/v1/articles` 可传 `status = pending_review` 提交审核。
+- 草稿允许正文为空；提交审核必须有正文。
+- 可添加最多 9 个 Tags，后端自由创建。
 
 登录要求：
 
@@ -264,14 +367,20 @@
 展示内容：
 
 - 用户基础信息。
+- 用户头像、Bio、学校/公司。
 - 我的投稿入口。
 - 我的评论入口。
 - 我的通知入口和未读数量。
+- 编辑资料入口。
 
 调用 API：
 
 - `GET /api/v1/auth/me`
 - `GET /api/v1/me/notifications/unread-count`
+
+当前实现说明：
+
+- 常用入口包含 `/me/drafts` 草稿箱。
 
 登录要求：
 
@@ -285,6 +394,36 @@
 移动端要求：
 
 - 入口以单列列表或标签页展示。
+
+## 7a. 编辑个人资料 `/me/profile`
+
+用途：
+
+- 已登录用户编辑头像、Bio、学校和公司信息。
+
+展示内容：
+
+- 当前头像或默认头像。
+- 头像上传入口。
+- Bio、学校、公司输入框。
+- 保存按钮。
+- 预览主页按钮，跳转 `/authors/[username]`。
+
+调用 API：
+
+- `GET /api/v1/auth/me`
+- `PATCH /api/v1/me/profile`
+- `POST /api/v1/me/avatar`
+
+登录要求：
+
+- 必须登录。
+
+错误状态：
+
+- 未登录跳转登录页。
+- 头像上传失败展示文件错误。
+- 保存失败保留输入内容并提示。
 
 ## 8. 我的投稿页 `/me/articles`
 
@@ -303,6 +442,12 @@
 
 - `GET /api/v1/me/articles`
 
+当前实现说明：
+
+- 页面支持按 `draft`、`pending_review`、`published`、`rejected`、`archived` 筛选。
+- 列表展示字数、预计阅读时长、浏览量、修订次数。
+- 已发布文章展示“发起修订”入口。
+
 登录要求：
 
 - 必须登录。
@@ -310,6 +455,30 @@
 空状态：
 
 - 无投稿时展示投稿入口。
+
+## 8a. 我的草稿页 `/me/drafts`
+
+用途：
+
+- 用户查看自己的草稿，并继续编辑或提交审核。
+
+展示内容：
+
+- 草稿列表。
+- 草稿所属版块、标题、摘要、字数、预计阅读时长、更新时间。
+- 继续编辑入口。
+
+调用 API：
+
+- `GET /api/v1/me/articles?status=draft`
+
+登录要求：
+
+- 必须登录。
+
+空状态：
+
+- 无草稿时展示新建草稿入口。
 
 ## 9. 投稿编辑页 `/me/articles/[id]/edit`
 
@@ -323,6 +492,7 @@
 - 当前状态。
 - 被拒文章的审核说明。
 - 标题、摘要、Markdown 正文。
+- Tag 输入，最多 9 个。
 - 图片上传入口。
 - 版块只读展示。
 
@@ -331,6 +501,12 @@
 - `GET /api/v1/me/articles/{id}`
 - `PATCH /api/v1/articles/{id}`
 - `POST /api/v1/uploads/article-images`
+
+当前实现说明：
+
+- 草稿可保存为 `draft`，也可提交为 `pending_review`。
+- 拒绝稿展示审核说明，修改后提交审核。
+- 已发布文章可发起修订，提交后创建 `pending_review` 修订稿，原文继续公开。
 
 登录要求：
 
@@ -341,7 +517,8 @@
 
 - `draft`、`pending_review`、`rejected` 可编辑。
 - `rejected` 保存后重新进入 `pending_review`。
-- `published`、`archived` 不允许直接编辑。
+- `published` 可发起修订，但不直接修改原文。
+- `archived` 不允许直接编辑。
 
 ## 10. 我的评论页 `/me/comments`
 
@@ -369,7 +546,61 @@
 
 - 无评论时展示“暂无评论”。
 
-## 11. 我的通知页 `/me/notifications`
+## 11. 我的收藏页 `/me/bookmarks`
+
+用途：
+
+- 用户查看自己收藏的文章，按收藏夹筛选，并创建收藏夹。
+
+展示内容：
+
+- 收藏夹下拉筛选。
+- 新建收藏夹表单。
+- 收藏文章列表。
+
+调用 API：
+
+- `GET /api/v1/me/bookmark-collections`
+- `POST /api/v1/me/bookmark-collections`
+- `GET /api/v1/me/bookmarks`
+
+登录要求：
+
+- 必须登录。
+
+空状态：
+
+- 无收藏时展示“暂无收藏”。
+
+## 12. 关注列表 `/me/following`
+
+用途：
+
+- 查看当前用户关注的用户。
+
+调用 API：
+
+- `GET /api/v1/me/following`
+
+登录要求：
+
+- 必须登录。
+
+## 13. 粉丝列表 `/me/followers`
+
+用途：
+
+- 查看关注当前用户的用户。
+
+调用 API：
+
+- `GET /api/v1/me/followers`
+
+登录要求：
+
+- 必须登录。
+
+## 14. 我的通知页 `/me/notifications`
 
 用途：
 
@@ -399,56 +630,24 @@
 
 - 必须登录。
 
-空状态：
-
-- 无通知时展示"暂无通知"。
-
-## 11a. 我关注的用户 `/me/following`
+## 15. 举报管理页 `/admin/reports`
 
 用途：
 
-- 用户查看自己关注的用户列表。
-
-展示内容：
-
-- 关注用户列表（分页，关注时间倒序）。
-- 每项：用户头像、用户名、Bio 摘要、关注时间、取关按钮。
+- reviewer/admin 查看和处理文章举报。
 
 调用 API：
 
-- `GET /api/v1/me/following`
-- `DELETE /api/v1/me/following/{username}`
+- `GET /api/v1/admin/reports`
+- `POST /api/v1/admin/reports/{id}/resolve`
 
 登录要求：
 
-- 必须登录。
+- reviewer、admin。
 
 空状态：
 
-- 无关注时展示"你还没有关注任何用户"。
-
-## 11b. 关注我的用户 `/me/followers`
-
-用途：
-
-- 用户查看关注自己的用户列表。
-
-展示内容：
-
-- 粉丝用户列表（分页，关注时间倒序）。
-- 每项：用户头像、用户名、Bio 摘要、关注时间。不提供移除操作。
-
-调用 API：
-
-- `GET /api/v1/me/followers`
-
-登录要求：
-
-- 必须登录。
-
-空状态：
-
-- 无粉丝时展示"还没有人关注你"。
+- 无举报时展示"暂无举报"。
 
 ## 12. 管理后台 `/admin`
 
@@ -472,6 +671,9 @@
 - `POST /api/v1/admin/articles/{id}/restore`
 - `POST /api/v1/admin/modules`
 - `PATCH /api/v1/admin/modules/{id}`
+- `GET /api/v1/domains?includeInactive=true`
+- `POST /api/v1/admin/domains`
+- `PATCH /api/v1/admin/domains/{id}`
 - `GET /api/v1/admin/comments`
 - `POST /api/v1/admin/comments/{id}/hide`
 - `POST /api/v1/admin/comments/{id}/show`

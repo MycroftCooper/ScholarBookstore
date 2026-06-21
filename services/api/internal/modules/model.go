@@ -4,6 +4,9 @@ import "time"
 
 type Module struct {
 	ID          int64
+	DomainID    int64
+	DomainSlug  string
+	DomainName  string
 	Slug        string
 	Name        string
 	Description string
@@ -15,6 +18,9 @@ type Module struct {
 
 type PublicModule struct {
 	ID          int64     `json:"id"`
+	DomainID    int64     `json:"domainId"`
+	DomainSlug  string    `json:"domainSlug"`
+	DomainName  string    `json:"domainName"`
 	Slug        string    `json:"slug"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
@@ -25,6 +31,7 @@ type PublicModule struct {
 }
 
 type CreateModuleInput struct {
+	DomainID    int64
 	Slug        string
 	Name        string
 	Description string
@@ -33,6 +40,7 @@ type CreateModuleInput struct {
 }
 
 type UpdateModuleInput struct {
+	DomainID    *int64
 	Name        *string
 	Description *string
 	SortOrder   *int
@@ -42,6 +50,9 @@ type UpdateModuleInput struct {
 func ToPublic(module Module) PublicModule {
 	return PublicModule{
 		ID:          module.ID,
+		DomainID:    module.DomainID,
+		DomainSlug:  module.DomainSlug,
+		DomainName:  module.DomainName,
 		Slug:        module.Slug,
 		Name:        module.Name,
 		Description: module.Description,

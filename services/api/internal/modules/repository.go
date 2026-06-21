@@ -20,14 +20,17 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) List(ctx context.Context, includeInactive bool) ([]Module, error) {
 	query := `
-		select id, slug, name, description, sort_order, is_active, created_at, updated_at
-		from modules
-		where deleted_at is null
+		select
+			m.id, m.domain_id, d.slug, d.name, m.slug, m.name, m.description,
+			m.sort_order, m.is_active, m.created_at, m.updated_at
+		from modules m
+		join domains d on d.id = m.domain_id
+		where m.deleted_at is null and d.deleted_at is null
 	`
 	if !includeInactive {
-		query += " and is_active = true"
+		query += " and m.is_active = true and d.is_active = true"
 	}
-	query += " order by sort_order asc, id asc"
+	query += " order by d.sort_order asc, m.sort_order asc, m.id asc"
 
 	rows, err := r.db.Query(ctx, query)
 	if err != nil {
@@ -40,6 +43,9 @@ func (r *Repository) List(ctx context.Context, includeInactive bool) ([]Module, 
 		var module Module
 		if err := rows.Scan(
 			&module.ID,
+			&module.DomainID,
+			&module.DomainSlug,
+			&module.DomainName,
 			&module.Slug,
 			&module.Name,
 			&module.Description,
@@ -61,21 +67,32 @@ func (r *Repository) List(ctx context.Context, includeInactive bool) ([]Module, 
 
 func (r *Repository) FindBySlug(ctx context.Context, slug string) (Module, error) {
 	const query = `
-		select id, slug, name, description, sort_order, is_active, created_at, updated_at
-		from modules
-		where slug = $1 and is_active = true and deleted_at is null
+		select
+			m.id, m.domain_id, d.slug, d.name, m.slug, m.name, m.description,
+			m.sort_order, m.is_active, m.created_at, m.updated_at
+		from modules m
+		join domains d on d.id = m.domain_id
+		where m.slug = $1 and m.is_active = true and m.deleted_at is null
+			and d.is_active = true and d.deleted_at is null
 	`
 	return r.findOne(ctx, query, slug)
 }
 
 func (r *Repository) Create(ctx context.Context, input CreateModuleInput) (Module, error) {
 	const query = `
-		insert into modules (slug, name, description, sort_order, is_active)
-		values ($1, $2, $3, $4, $5)
-		returning id, slug, name, description, sort_order, is_active, created_at, updated_at
+		insert into modules (domain_id, slug, name, description, sort_order, is_active)
+		select $1, $2, $3, $4, $5, $6
+		where exists (
+			select 1 from domains
+			where id = $1 and deleted_at is null
+		)
+		returning id
 	`
 
 	module, err := r.scanCreate(ctx, query, input)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Module{}, ErrNotFound
+	}
 	if isUniqueViolation(err) {
 		return Module{}, ErrConflict
 	}
@@ -89,54 +106,59 @@ func (r *Repository) Update(ctx context.Context, id int64, input UpdateModuleInp
 	const query = `
 		update modules
 		set
-			name = coalesce($2, name),
-			description = coalesce($3, description),
-			sort_order = coalesce($4, sort_order),
-			is_active = coalesce($5, is_active),
+			domain_id = coalesce($2, domain_id),
+			name = coalesce($3, name),
+			description = coalesce($4, description),
+			sort_order = coalesce($5, sort_order),
+			is_active = coalesce($6, is_active),
 			updated_at = now()
 		where id = $1 and deleted_at is null
-		returning id, slug, name, description, sort_order, is_active, created_at, updated_at
+			and ($2::bigint is null or exists (
+				select 1 from domains
+				where id = $2 and deleted_at is null
+			))
+		returning id
 	`
 
-	var module Module
-	err := r.db.QueryRow(ctx, query, id, input.Name, input.Description, input.SortOrder, input.IsActive).Scan(
-		&module.ID,
-		&module.Slug,
-		&module.Name,
-		&module.Description,
-		&module.SortOrder,
-		&module.IsActive,
-		&module.CreatedAt,
-		&module.UpdatedAt,
-	)
+	var updatedID int64
+	err := r.db.QueryRow(ctx, query, id, input.DomainID, input.Name, input.Description, input.SortOrder, input.IsActive).Scan(&updatedID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Module{}, ErrNotFound
 	}
 	if err != nil {
 		return Module{}, fmt.Errorf("update module: %w", err)
 	}
-	return module, nil
+	return r.FindByID(ctx, updatedID)
 }
 
 func (r *Repository) scanCreate(ctx context.Context, query string, input CreateModuleInput) (Module, error) {
-	var module Module
-	err := r.db.QueryRow(ctx, query, input.Slug, input.Name, input.Description, input.SortOrder, input.IsActive).Scan(
-		&module.ID,
-		&module.Slug,
-		&module.Name,
-		&module.Description,
-		&module.SortOrder,
-		&module.IsActive,
-		&module.CreatedAt,
-		&module.UpdatedAt,
-	)
-	return module, err
+	var id int64
+	err := r.db.QueryRow(ctx, query, input.DomainID, input.Slug, input.Name, input.Description, input.SortOrder, input.IsActive).Scan(&id)
+	if err != nil {
+		return Module{}, err
+	}
+	return r.FindByID(ctx, id)
+}
+
+func (r *Repository) FindByID(ctx context.Context, id int64) (Module, error) {
+	const query = `
+		select
+			m.id, m.domain_id, d.slug, d.name, m.slug, m.name, m.description,
+			m.sort_order, m.is_active, m.created_at, m.updated_at
+		from modules m
+		join domains d on d.id = m.domain_id
+		where m.id = $1 and m.deleted_at is null and d.deleted_at is null
+	`
+	return r.findOne(ctx, query, id)
 }
 
 func (r *Repository) findOne(ctx context.Context, query string, args ...interface{}) (Module, error) {
 	var module Module
 	err := r.db.QueryRow(ctx, query, args...).Scan(
 		&module.ID,
+		&module.DomainID,
+		&module.DomainSlug,
+		&module.DomainName,
 		&module.Slug,
 		&module.Name,
 		&module.Description,

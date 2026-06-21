@@ -72,7 +72,7 @@ export default function ModuleDetailPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold text-ink">文章</h2>
                 <Link
-                  href="/submit"
+                  href="/me/submit"
                   className="rounded-md bg-moss px-4 py-2 text-sm font-medium text-white hover:bg-[#354f42]"
                 >
                   投稿

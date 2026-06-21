@@ -1,9 +1,18 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"net/mail"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +27,8 @@ type UserRepository interface {
 	Create(ctx context.Context, username string, email string, passwordHash string) (users.User, error)
 	FindByEmail(ctx context.Context, email string) (users.User, error)
 	FindByID(ctx context.Context, id int64) (users.User, error)
+	UpdateProfile(ctx context.Context, id int64, input users.UpdateProfileInput) (users.User, error)
+	UpdateAvatar(ctx context.Context, id int64, avatarURL string) (users.User, error)
 }
 
 type Service struct {
@@ -128,6 +139,108 @@ func (s *Service) AuthenticateToken(ctx context.Context, rawToken string) (users
 	return users.ToPublic(user), nil
 }
 
+func (s *Service) UpdateProfile(ctx context.Context, userID int64, input users.UpdateProfileInput) (users.PublicUser, error) {
+	input.Bio = strings.TrimSpace(input.Bio)
+	input.School = strings.TrimSpace(input.School)
+	input.Company = strings.TrimSpace(input.Company)
+	if userID <= 0 || len(input.Bio) > 200 || len(input.School) > 100 || len(input.Company) > 100 {
+		return users.PublicUser{}, ErrInvalidInput
+	}
+
+	user, err := s.users.UpdateProfile(ctx, userID, input)
+	if errors.Is(err, users.ErrNotFound) {
+		return users.PublicUser{}, ErrUnauthorized
+	}
+	if err != nil {
+		return users.PublicUser{}, err
+	}
+	return users.ToPublic(user), nil
+}
+
+const maxAvatarBytes int64 = 2 * 1024 * 1024
+
+var allowedAvatarTypes = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+}
+
+func (s *Service) UploadAvatar(ctx context.Context, userID int64, header *multipart.FileHeader) (users.PublicUser, error) {
+	if userID <= 0 || header == nil || strings.TrimSpace(header.Filename) == "" {
+		return users.PublicUser{}, ErrInvalidInput
+	}
+	if header.Size <= 0 || header.Size > maxAvatarBytes {
+		return users.PublicUser{}, ErrPayloadTooLarge
+	}
+
+	originalName := filepath.Base(header.Filename)
+	ext := strings.ToLower(filepath.Ext(originalName))
+	if ext == ".jpeg" {
+		ext = ".jpg"
+	}
+
+	file, err := header.Open()
+	if err != nil {
+		return users.PublicUser{}, fmt.Errorf("open avatar: %w", err)
+	}
+	defer file.Close()
+
+	head := make([]byte, 512)
+	n, err := io.ReadFull(file, head)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		return users.PublicUser{}, fmt.Errorf("read avatar header: %w", err)
+	}
+	head = head[:n]
+
+	mimeType := http.DetectContentType(head)
+	expectedExt, ok := allowedAvatarTypes[mimeType]
+	if !ok || ext != expectedExt {
+		return users.PublicUser{}, ErrUnsupportedMedia
+	}
+
+	now := time.Now().UTC()
+	storedName, err := randomAvatarFilename(now, ext)
+	if err != nil {
+		return users.PublicUser{}, err
+	}
+	relativeDir := filepath.Join("avatars", now.Format("2006"), now.Format("01"))
+	targetDir := filepath.Join(s.cfg.UploadDir, relativeDir)
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return users.PublicUser{}, fmt.Errorf("create avatar dir: %w", err)
+	}
+
+	targetPath := filepath.Join(targetDir, filepath.Base(storedName))
+	out, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return users.PublicUser{}, fmt.Errorf("create avatar file: %w", err)
+	}
+	defer out.Close()
+
+	written, err := io.Copy(out, io.MultiReader(bytes.NewReader(head), io.LimitReader(file, maxAvatarBytes+1)))
+	if err != nil {
+		_ = os.Remove(targetPath)
+		return users.PublicUser{}, fmt.Errorf("write avatar file: %w", err)
+	}
+	if written > maxAvatarBytes {
+		_ = os.Remove(targetPath)
+		return users.PublicUser{}, ErrPayloadTooLarge
+	}
+
+	urlPath := strings.ReplaceAll(filepath.ToSlash(filepath.Join("avatars", now.Format("2006"), now.Format("01"), filepath.Base(storedName))), "\\", "/")
+	publicURL := s.cfg.PublicUploadBaseURL + "/" + urlPath
+	user, err := s.users.UpdateAvatar(ctx, userID, publicURL)
+	if errors.Is(err, users.ErrNotFound) {
+		_ = os.Remove(targetPath)
+		return users.PublicUser{}, ErrUnauthorized
+	}
+	if err != nil {
+		_ = os.Remove(targetPath)
+		return users.PublicUser{}, err
+	}
+
+	return users.ToPublic(user), nil
+}
+
 func validateRegistration(username string, email string, password string) error {
 	if len(username) < 3 || len(username) > 40 {
 		return ErrInvalidInput
@@ -147,4 +260,12 @@ func validEmail(email string) bool {
 	}
 	_, err := mail.ParseAddress(email)
 	return err == nil
+}
+
+func randomAvatarFilename(now time.Time, ext string) (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate avatar filename: %w", err)
+	}
+	return fmt.Sprintf("%s-%s%s", now.Format("20060102150405"), hex.EncodeToString(buf), ext), nil
 }

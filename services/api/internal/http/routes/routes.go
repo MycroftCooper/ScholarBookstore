@@ -12,12 +12,16 @@ import (
 
 	"scholarbookstore/services/api/internal/articles"
 	"scholarbookstore/services/api/internal/auth"
+	"scholarbookstore/services/api/internal/bookmarks"
 	"scholarbookstore/services/api/internal/comments"
 	"scholarbookstore/services/api/internal/config"
+	"scholarbookstore/services/api/internal/domains"
+	"scholarbookstore/services/api/internal/follows"
 	authmiddleware "scholarbookstore/services/api/internal/http/middleware"
 	"scholarbookstore/services/api/internal/http/response"
 	"scholarbookstore/services/api/internal/modules"
 	"scholarbookstore/services/api/internal/notifications"
+	"scholarbookstore/services/api/internal/reports"
 	apiuploads "scholarbookstore/services/api/internal/uploads"
 	"scholarbookstore/services/api/internal/users"
 )
@@ -34,7 +38,7 @@ func New(deps Dependencies) http.Handler {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   deps.Config.CORSAllowedOrigins,
-		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete, http.MethodOptions},
+		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -43,8 +47,13 @@ func New(deps Dependencies) http.Handler {
 	r.Get("/healthz", handleHealthz(deps.DB))
 
 	userRepo := users.NewRepository(deps.DB)
+	userService := users.NewService(userRepo)
+	userHandler := users.NewHandler(userService)
 	authService := auth.NewService(deps.Config, userRepo)
 	authHandler := auth.NewHandler(deps.Config, authService)
+	domainRepo := domains.NewRepository(deps.DB)
+	domainService := domains.NewService(domainRepo)
+	domainHandler := domains.NewHandler(domainService)
 	moduleRepo := modules.NewRepository(deps.DB)
 	moduleService := modules.NewService(moduleRepo)
 	moduleHandler := modules.NewHandler(moduleService)
@@ -54,6 +63,15 @@ func New(deps Dependencies) http.Handler {
 	notificationRepo := notifications.NewRepository(deps.DB)
 	notificationService := notifications.NewService(notificationRepo)
 	notificationHandler := notifications.NewHandler(notificationService)
+	bookmarkRepo := bookmarks.NewRepository(deps.DB)
+	bookmarkService := bookmarks.NewService(bookmarkRepo, notificationRepo)
+	bookmarkHandler := bookmarks.NewHandler(bookmarkService)
+	followRepo := follows.NewRepository(deps.DB)
+	followService := follows.NewService(followRepo)
+	followHandler := follows.NewHandler(followService)
+	reportRepo := reports.NewRepository(deps.DB)
+	reportService := reports.NewService(reportRepo)
+	reportHandler := reports.NewHandler(reportService)
 	commentRepo := comments.NewRepository(deps.DB)
 	commentService := comments.NewService(commentRepo, notificationRepo)
 	commentHandler := comments.NewHandler(commentService)
@@ -78,19 +96,37 @@ func New(deps Dependencies) http.Handler {
 		})
 
 		r.With(authmiddleware.OptionalAuth(deps.Config, authService)).Get("/modules", moduleHandler.List)
+		r.With(authmiddleware.OptionalAuth(deps.Config, authService)).Get("/domains", domainHandler.List)
+		r.Get("/domains/{id}", domainHandler.Detail)
 		r.Get("/modules/{slug}", moduleHandler.Detail)
 		r.Get("/articles", articleHandler.ListPublished)
 		r.Get("/articles/{id}", articleHandler.DetailPublished)
-		r.Get("/articles/{id}/comments", commentHandler.ListByArticle)
+		r.Get("/users/{username}", userHandler.PublicAuthorProfile)
 
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
+			r.Patch("/me/profile", authHandler.UpdateProfile)
+			r.Post("/me/avatar", authHandler.UploadAvatar)
+			r.Get("/articles/{id}/comments", commentHandler.ListByArticle)
+			r.Get("/articles/{id}/bookmark", bookmarkHandler.State)
 			r.Post("/articles", articleHandler.Create)
 			r.Post("/articles/{id}/comments", commentHandler.CreateTopLevel)
+			r.Post("/articles/{id}/bookmark", bookmarkHandler.Add)
+			r.Post("/articles/{id}/reports", reportHandler.Create)
+			r.Delete("/articles/{id}/bookmark", bookmarkHandler.Remove)
 			r.Post("/comments/{id}/replies", commentHandler.Reply)
+			r.Put("/comments/{id}/vote", commentHandler.Vote)
 			r.Delete("/comments/{id}", commentHandler.Delete)
 			r.Get("/me/articles", articleHandler.ListMine)
 			r.Get("/me/articles/{id}", articleHandler.DetailMine)
+			r.Get("/me/bookmark-collections", bookmarkHandler.ListCollections)
+			r.Post("/me/bookmark-collections", bookmarkHandler.CreateCollection)
+			r.Get("/me/bookmarks", bookmarkHandler.ListBookmarks)
+			r.Get("/me/following", followHandler.ListFollowing)
+			r.Get("/me/followers", followHandler.ListFollowers)
+			r.Get("/users/{username}/follow", followHandler.State)
+			r.Post("/users/{username}/follow", followHandler.Follow)
+			r.Delete("/users/{username}/follow", followHandler.Unfollow)
 			r.Get("/me/comments", commentHandler.ListMine)
 			r.Get("/me/notifications", notificationHandler.ListMine)
 			r.Get("/me/notifications/unread-count", notificationHandler.UnreadCount)
@@ -103,6 +139,8 @@ func New(deps Dependencies) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
 			r.Use(authmiddleware.RequireRole("admin"))
+			r.Post("/admin/domains", domainHandler.Create)
+			r.Patch("/admin/domains/{id}", domainHandler.Update)
 			r.Post("/admin/modules", moduleHandler.Create)
 			r.Patch("/admin/modules/{id}", moduleHandler.Update)
 		})
@@ -119,6 +157,8 @@ func New(deps Dependencies) http.Handler {
 			r.Get("/admin/comments", commentHandler.ListAdmin)
 			r.Post("/admin/comments/{id}/hide", commentHandler.Hide)
 			r.Post("/admin/comments/{id}/show", commentHandler.Show)
+			r.Get("/admin/reports", reportHandler.ListAdmin)
+			r.Post("/admin/reports/{id}/resolve", reportHandler.Resolve)
 		})
 	})
 

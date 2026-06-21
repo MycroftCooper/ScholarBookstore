@@ -10,12 +10,18 @@ export type CommentItem = {
   replyToUsername: string | null;
   content: string;
   visibility: "visible" | "hidden";
+  upVotes: number;
+  downVotes: number;
+  score: number;
+  myVote: -1 | 0 | 1;
   createdAt: string;
   updatedAt: string;
 };
 
-export function listComments(articleId: number) {
-  return apiRequest<CommentItem[]>(`/articles/${articleId}/comments`);
+export function listComments(articleId: number, sort: "latest" | "hot" = "latest") {
+  const params = new URLSearchParams();
+  params.set("sort", sort);
+  return apiRequest<CommentItem[]>(`/articles/${articleId}/comments?${params.toString()}`);
 }
 
 export function createComment(articleId: number, content: string) {
@@ -35,6 +41,13 @@ export function replyComment(commentId: number, content: string) {
 export function deleteComment(commentId: number) {
   return apiRequest<{ ok: boolean }>(`/comments/${commentId}`, {
     method: "DELETE",
+  });
+}
+
+export function voteComment(commentId: number, value: -1 | 0 | 1) {
+  return apiRequest<CommentItem>(`/comments/${commentId}/vote`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
   });
 }
 

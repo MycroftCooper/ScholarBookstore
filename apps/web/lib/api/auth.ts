@@ -5,6 +5,10 @@ export type CurrentUser = {
   username: string;
   email: string;
   role: "user" | "reviewer" | "admin";
+  avatarUrl: string;
+  bio: string;
+  school: string;
+  company: string;
   createdAt: string;
 };
 
@@ -24,6 +28,26 @@ export function register(username: string, email: string, password: string) {
 
 export function getCurrentUser() {
   return apiRequest<CurrentUser>("/auth/me");
+}
+
+export function updateProfile(input: {
+  bio: string;
+  school: string;
+  company: string;
+}) {
+  return apiRequest<CurrentUser>("/me/profile", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function uploadAvatar(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<CurrentUser>("/me/avatar", {
+    method: "POST",
+    body: form,
+  });
 }
 
 export function logout() {

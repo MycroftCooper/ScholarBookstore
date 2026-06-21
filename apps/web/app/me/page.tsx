@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SiteHeader } from "@/components/layout/SiteHeader";
+import { UserAvatar } from "@/components/users/UserAvatar";
 import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 
@@ -48,7 +49,21 @@ export default function MePage() {
         {user && (
           <div className="grid gap-5 md:grid-cols-[0.9fr_1.1fr]">
             <section className="rounded-lg border border-stone-200 bg-white p-6 shadow-soft">
-              <h2 className="text-lg font-semibold text-ink">基础信息</h2>
+              <div className="flex items-start gap-4">
+                <UserAvatar
+                  username={user.username}
+                  avatarUrl={user.avatarUrl}
+                  size="lg"
+                />
+                <div>
+                  <h2 className="text-lg font-semibold text-ink">基础信息</h2>
+                  {user.bio && (
+                    <p className="mt-2 text-sm leading-6 text-stone-600">
+                      {user.bio}
+                    </p>
+                  )}
+                </div>
+              </div>
               <dl className="mt-5 grid gap-4 text-sm">
                 <div>
                   <dt className="text-stone-500">用户名</dt>
@@ -58,13 +73,47 @@ export default function MePage() {
                 </div>
                 <div>
                   <dt className="text-stone-500">邮箱</dt>
-                  <dd className="mt-1 font-medium text-stone-900">{user.email}</dd>
+                  <dd className="mt-1 font-medium text-stone-900">
+                    {user.email}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-stone-500">角色</dt>
-                  <dd className="mt-1 font-medium text-stone-900">{user.role}</dd>
+                  <dd className="mt-1 font-medium text-stone-900">
+                    {user.role}
+                  </dd>
                 </div>
+                {user.school && (
+                  <div>
+                    <dt className="text-stone-500">学校</dt>
+                    <dd className="mt-1 font-medium text-stone-900">
+                      {user.school}
+                    </dd>
+                  </div>
+                )}
+                {user.company && (
+                  <div>
+                    <dt className="text-stone-500">公司</dt>
+                    <dd className="mt-1 font-medium text-stone-900">
+                      {user.company}
+                    </dd>
+                  </div>
+                )}
               </dl>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link
+                  href={`/authors/${user.username}`}
+                  className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 hover:border-moss hover:text-moss"
+                >
+                  预览主页
+                </Link>
+                <Link
+                  href="/me/profile"
+                  className="rounded-md bg-moss px-4 py-2 text-sm font-medium text-white hover:bg-[#354f42]"
+                >
+                  编辑资料
+                </Link>
+              </div>
             </section>
 
             <section className="rounded-lg border border-stone-200 bg-white p-6">
@@ -79,10 +128,16 @@ export default function MePage() {
                   </Link>
                 )}
                 <Link
-                  href="/submit"
+                  href="/me/submit"
                   className="rounded-md border border-stone-200 px-4 py-3 text-sm text-stone-700 hover:border-stone-300 hover:bg-stone-50"
                 >
                   投稿
+                </Link>
+                <Link
+                  href="/me/drafts"
+                  className="rounded-md border border-stone-200 px-4 py-3 text-sm text-stone-700 hover:border-stone-300 hover:bg-stone-50"
+                >
+                  我的草稿
                 </Link>
                 <Link
                   href="/me/articles"
@@ -95,6 +150,24 @@ export default function MePage() {
                   className="rounded-md border border-stone-200 px-4 py-3 text-sm text-stone-700 hover:border-stone-300 hover:bg-stone-50"
                 >
                   我的评论
+                </Link>
+                <Link
+                  href="/me/bookmarks"
+                  className="rounded-md border border-stone-200 px-4 py-3 text-sm text-stone-700 hover:border-stone-300 hover:bg-stone-50"
+                >
+                  我的收藏
+                </Link>
+                <Link
+                  href="/me/following"
+                  className="rounded-md border border-stone-200 px-4 py-3 text-sm text-stone-700 hover:border-stone-300 hover:bg-stone-50"
+                >
+                  我关注的
+                </Link>
+                <Link
+                  href="/me/followers"
+                  className="rounded-md border border-stone-200 px-4 py-3 text-sm text-stone-700 hover:border-stone-300 hover:bg-stone-50"
+                >
+                  关注我的
                 </Link>
                 <Link
                   href="/me/notifications"

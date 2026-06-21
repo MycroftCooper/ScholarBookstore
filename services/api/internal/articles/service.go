@@ -3,6 +3,7 @@ package articles
 import (
 	"context"
 	"strings"
+	"unicode"
 )
 
 var validStatuses = map[string]struct{}{
@@ -14,11 +15,13 @@ var validStatuses = map[string]struct{}{
 }
 
 type ArticleRepository interface {
-	ListPublished(ctx context.Context, moduleSlug string, page int, pageSize int) ([]Article, int64, error)
+	ListPublished(ctx context.Context, filter PublishedArticleFilter, page int, pageSize int) ([]Article, int64, error)
 	ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Article, int64, error)
 	FindPublishedByID(ctx context.Context, id int64) (Article, error)
+	IncrementViewCount(ctx context.Context, id int64) error
 	ListMine(ctx context.Context, authorID int64, status string, page int, pageSize int) ([]Article, int64, error)
 	Create(ctx context.Context, input CreateArticleInput) (Article, error)
+	CreateRevision(ctx context.Context, originalID int64, authorID int64, input UpdateArticleInput) (Article, error)
 	FindByIDForAuthor(ctx context.Context, id int64, authorID int64) (Article, error)
 	UpdateOwn(ctx context.Context, id int64, authorID int64, input UpdateArticleInput) (Article, error)
 	ListPendingReview(ctx context.Context, page int, pageSize int) ([]Article, int64, error)
@@ -36,9 +39,20 @@ func NewService(repo ArticleRepository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) ListPublished(ctx context.Context, moduleSlug string, page int, pageSize int) (Page, error) {
+func (s *Service) ListPublished(ctx context.Context, filter PublishedArticleFilter, page int, pageSize int) (Page, error) {
 	page, pageSize = normalizePage(page, pageSize)
-	items, total, err := s.repo.ListPublished(ctx, strings.TrimSpace(moduleSlug), page, pageSize)
+	filter.ModuleSlug = strings.TrimSpace(filter.ModuleSlug)
+	filter.Query = strings.TrimSpace(filter.Query)
+	filter.TagSlug = strings.TrimSpace(filter.TagSlug)
+	filter.Sort = strings.TrimSpace(filter.Sort)
+	if filter.Sort == "" {
+		filter.Sort = "latest"
+	}
+	if filter.Sort != "latest" && filter.Sort != "hot" && filter.Sort != "random" {
+		return Page{}, ErrInvalidInput
+	}
+
+	items, total, err := s.repo.ListPublished(ctx, filter, page, pageSize)
 	if err != nil {
 		return Page{}, err
 	}
@@ -64,6 +78,9 @@ func (s *Service) ListAdmin(ctx context.Context, status string, page int, pageSi
 func (s *Service) FindPublishedByID(ctx context.Context, id int64) (PublicArticle, error) {
 	if id <= 0 {
 		return PublicArticle{}, ErrNotFound
+	}
+	if err := s.repo.IncrementViewCount(ctx, id); err != nil {
+		return PublicArticle{}, err
 	}
 	item, err := s.repo.FindPublishedByID(ctx, id)
 	if err != nil {
@@ -104,9 +121,19 @@ func (s *Service) Create(ctx context.Context, input CreateArticleInput) (PublicA
 	input.Title = strings.TrimSpace(input.Title)
 	input.Summary = strings.TrimSpace(input.Summary)
 	input.ContentMD = strings.TrimSpace(input.ContentMD)
-	if input.ModuleID <= 0 || input.AuthorID <= 0 || !validArticleText(input.Title, input.Summary, input.ContentMD) {
+	input.Status = strings.TrimSpace(input.Status)
+	if input.Status == "" {
+		input.Status = "pending_review"
+	}
+	if input.ModuleID <= 0 || input.AuthorID <= 0 || !validSubmissionStatus(input.Status) || !validArticleText(input.Title, input.Summary, input.ContentMD, input.Status) {
 		return PublicArticle{}, ErrInvalidInput
 	}
+	tags, ok := normalizeTags(input.Tags)
+	if !ok {
+		return PublicArticle{}, ErrInvalidInput
+	}
+	input.Tags = tags
+	input.WordCount, input.ReadingMinutes = articleMetrics(input.ContentMD)
 
 	item, err := s.repo.Create(ctx, input)
 	if err != nil {
@@ -135,10 +162,59 @@ func (s *Service) UpdateOwn(ctx context.Context, id int64, authorID int64, input
 	}
 	if input.ContentMD != nil {
 		trimmed := strings.TrimSpace(*input.ContentMD)
-		if trimmed == "" {
+		input.ContentMD = &trimmed
+		wordCount, readingMinutes := articleMetrics(trimmed)
+		input.WordCount = &wordCount
+		input.ReadingMinutes = &readingMinutes
+	}
+	if input.Status != nil {
+		trimmed := strings.TrimSpace(*input.Status)
+		if !validSubmissionStatus(trimmed) {
 			return PublicArticle{}, ErrInvalidInput
 		}
-		input.ContentMD = &trimmed
+		input.Status = &trimmed
+	}
+	if input.Tags != nil {
+		tags, ok := normalizeTags(*input.Tags)
+		if !ok {
+			return PublicArticle{}, ErrInvalidInput
+		}
+		input.Tags = &tags
+	}
+	targetStatus := "draft"
+	if input.Status != nil {
+		targetStatus = *input.Status
+	}
+	if targetStatus == "pending_review" && input.ContentMD != nil && *input.ContentMD == "" {
+		return PublicArticle{}, ErrInvalidInput
+	}
+	if targetStatus == "pending_review" && input.ContentMD == nil {
+		current, err := s.repo.FindByIDForAuthor(ctx, id, authorID)
+		if err != nil {
+			return PublicArticle{}, err
+		}
+		if strings.TrimSpace(current.ContentMD) == "" {
+			return PublicArticle{}, ErrInvalidInput
+		}
+	}
+
+	current, err := s.repo.FindByIDForAuthor(ctx, id, authorID)
+	if err != nil {
+		return PublicArticle{}, err
+	}
+	if current.Status == "published" {
+		if targetStatus != "pending_review" || input.Title == nil || input.ContentMD == nil {
+			return PublicArticle{}, ErrInvalidInput
+		}
+		if input.Summary == nil {
+			summary := current.Summary
+			input.Summary = &summary
+		}
+		item, err := s.repo.CreateRevision(ctx, id, authorID, input)
+		if err != nil {
+			return PublicArticle{}, err
+		}
+		return ToPublic(item, true), nil
 	}
 
 	item, err := s.repo.UpdateOwn(ctx, id, authorID, input)
@@ -213,8 +289,53 @@ func (s *Service) RestoreArchived(ctx context.Context, id int64) (PublicArticle,
 	return ToPublic(item, false), nil
 }
 
-func validArticleText(title string, summary string, content string) bool {
-	return title != "" && len(title) <= 160 && len(summary) <= 300 && content != ""
+func validSubmissionStatus(status string) bool {
+	return status == "draft" || status == "pending_review"
+}
+
+func validArticleText(title string, summary string, content string, status string) bool {
+	if title == "" || len(title) > 160 || len(summary) > 300 {
+		return false
+	}
+	return status == "draft" || content != ""
+}
+
+func articleMetrics(content string) (int, int) {
+	wordCount := 0
+	for _, item := range content {
+		if !unicode.IsSpace(item) {
+			wordCount++
+		}
+	}
+	readingMinutes := (wordCount + 499) / 500
+	if readingMinutes < 1 {
+		readingMinutes = 1
+	}
+	return wordCount, readingMinutes
+}
+
+func normalizeTags(tags []string) ([]string, bool) {
+	out := make([]string, 0, len(tags))
+	seen := map[string]struct{}{}
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		if len([]rune(tag)) > 30 {
+			return nil, false
+		}
+		key := strings.ToLower(tag)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, tag)
+	}
+	if len(out) > 9 {
+		return nil, false
+	}
+	return out, true
 }
 
 func normalizePage(page int, pageSize int) (int, int) {

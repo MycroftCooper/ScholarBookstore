@@ -45,6 +45,24 @@ func (r *fakeUserRepo) FindByID(_ context.Context, _ int64) (users.User, error) 
 	return r.byID, nil
 }
 
+func (r *fakeUserRepo) UpdateProfile(_ context.Context, id int64, input users.UpdateProfileInput) (users.User, error) {
+	if id == 0 {
+		return users.User{}, users.ErrNotFound
+	}
+	r.byID.Bio = input.Bio
+	r.byID.School = input.School
+	r.byID.Company = input.Company
+	return r.byID, nil
+}
+
+func (r *fakeUserRepo) UpdateAvatar(_ context.Context, id int64, avatarURL string) (users.User, error) {
+	if id == 0 {
+		return users.User{}, users.ErrNotFound
+	}
+	r.byID.AvatarURL = avatarURL
+	return r.byID, nil
+}
+
 func TestRegisterHashesPassword(t *testing.T) {
 	repo := &fakeUserRepo{}
 	service := NewService(testConfig(), repo)

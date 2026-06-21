@@ -6,6 +6,7 @@ import {
   deleteComment,
   listComments,
   replyComment,
+  voteComment,
   type CommentItem,
 } from "@/lib/api/comments";
 import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
@@ -20,24 +21,32 @@ export function CommentSection({ articleId }: CommentSectionProps) {
   const [content, setContent] = useState("");
   const [replyContent, setReplyContent] = useState<Record<number, string>>({});
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  const [sort, setSort] = useState<"latest" | "hot">("latest");
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   async function loadComments() {
-    const items = await listComments(articleId);
+    const items = await listComments(articleId, sort);
     setComments(items);
   }
 
   useEffect(() => {
     getCurrentUser()
-      .then(setCurrentUser)
-      .catch(() => setCurrentUser(null));
-    loadComments()
-      .catch(() => setError("评论加载失败，请稍后重试"))
+      .then((user) => {
+        setCurrentUser(user);
+        return loadComments();
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          setCurrentUser(null);
+          return;
+        }
+        setError("评论加载失败，请稍后重试");
+      })
       .finally(() => setLoading(false));
-  }, [articleId]);
+  }, [articleId, sort]);
 
   const topLevelComments = useMemo(
     () => comments.filter((comment) => comment.parentId === null),
@@ -100,6 +109,19 @@ export function CommentSection({ articleId }: CommentSectionProps) {
     }
   }
 
+  async function handleVote(comment: CommentItem, value: -1 | 1) {
+    setError("");
+    const nextValue = comment.myVote === value ? 0 : value;
+    try {
+      const updated = await voteComment(comment.id, nextValue);
+      setComments((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+    } catch {
+      setError("赞踩失败，请稍后重试");
+    }
+  }
+
   function canDelete(comment: CommentItem) {
     return (
       currentUser &&
@@ -112,6 +134,28 @@ export function CommentSection({ articleId }: CommentSectionProps) {
   return (
     <section className="mt-6 rounded-lg border border-stone-200 bg-white p-6">
       <h2 className="text-lg font-semibold text-ink">评论</h2>
+      {currentUser && (
+        <div className="mt-3 flex gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => setSort("latest")}
+            className={`rounded-md border px-3 py-1 ${
+              sort === "latest" ? "border-moss text-moss" : "border-stone-300"
+            }`}
+          >
+            最新
+          </button>
+          <button
+            type="button"
+            onClick={() => setSort("hot")}
+            className={`rounded-md border px-3 py-1 ${
+              sort === "hot" ? "border-moss text-moss" : "border-stone-300"
+            }`}
+          >
+            最热
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -139,16 +183,17 @@ export function CommentSection({ articleId }: CommentSectionProps) {
         </form>
       ) : (
         <p className="mt-4 rounded-md bg-stone-50 p-3 text-sm text-stone-500">
-          登录后可以发表评论和回复。
+          登录后查看评论区并参与评论。
         </p>
       )}
 
-      <div className="mt-6 grid gap-4">
-        {loading && <p className="text-sm text-stone-500">正在加载评论...</p>}
-        {!loading && topLevelComments.length === 0 && (
-          <p className="text-sm text-stone-500">暂无评论</p>
-        )}
-        {topLevelComments.map((comment) => (
+      {currentUser && (
+        <div className="mt-6 grid gap-4">
+          {loading && <p className="text-sm text-stone-500">正在加载评论...</p>}
+          {!loading && topLevelComments.length === 0 && (
+            <p className="text-sm text-stone-500">暂无评论</p>
+          )}
+          {topLevelComments.map((comment) => (
           <div key={comment.id} className="rounded-md border border-stone-200 p-4">
             <div className="text-sm font-medium text-ink">
               {comment.authorUsername}
@@ -157,7 +202,25 @@ export function CommentSection({ articleId }: CommentSectionProps) {
               {comment.content}
             </p>
             {currentUser && (
-              <div className="mt-2 flex gap-3">
+              <div className="mt-2 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleVote(comment, 1)}
+                  className={`text-sm font-medium hover:underline ${
+                    comment.myVote === 1 ? "text-moss" : "text-stone-600"
+                  }`}
+                >
+                  赞 {comment.upVotes}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleVote(comment, -1)}
+                  className={`text-sm font-medium hover:underline ${
+                    comment.myVote === -1 ? "text-red-600" : "text-stone-600"
+                  }`}
+                >
+                  踩 {comment.downVotes}
+                </button>
                 <button
                   type="button"
                   onClick={() =>
@@ -232,12 +295,33 @@ export function CommentSection({ articleId }: CommentSectionProps) {
                   <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-stone-700">
                     {reply.content}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleVote(reply, 1)}
+                      className={`text-sm font-medium hover:underline ${
+                        reply.myVote === 1 ? "text-moss" : "text-stone-600"
+                      }`}
+                    >
+                      赞 {reply.upVotes}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleVote(reply, -1)}
+                      className={`text-sm font-medium hover:underline ${
+                        reply.myVote === -1 ? "text-red-600" : "text-stone-600"
+                      }`}
+                    >
+                      踩 {reply.downVotes}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var tagSlugUnsafe = regexp.MustCompile(`[^\p{L}\p{N}-]+`)
 
 type Repository struct {
 	db *pgxpool.Pool
@@ -17,20 +22,42 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) ListPublished(ctx context.Context, moduleSlug string, page int, pageSize int) ([]Article, int64, error) {
+func (r *Repository) ListPublished(ctx context.Context, filter PublishedArticleFilter, page int, pageSize int) ([]Article, int64, error) {
 	args := []interface{}{}
-	filter := "a.status = 'published' and a.deleted_at is null"
-	if moduleSlug != "" {
-		args = append(args, moduleSlug)
-		filter += fmt.Sprintf(" and m.slug = $%d and m.deleted_at is null and m.is_active = true", len(args))
+	whereClause := "a.status = 'published' and a.deleted_at is null and d.deleted_at is null and d.is_active = true"
+	if filter.ModuleSlug != "" {
+		args = append(args, filter.ModuleSlug)
+		whereClause += fmt.Sprintf(" and m.slug = $%d and m.deleted_at is null and m.is_active = true", len(args))
+	}
+	if filter.Query != "" {
+		args = append(args, "%"+filter.Query+"%")
+		whereClause += fmt.Sprintf(" and (a.title ilike $%d or a.summary ilike $%d or a.content_md ilike $%d)", len(args), len(args), len(args))
+	}
+	if filter.TagSlug != "" {
+		args = append(args, filter.TagSlug)
+		whereClause += fmt.Sprintf(` and exists (
+			select 1
+			from article_tags at
+			join tags t on t.id = at.tag_id
+			where at.article_id = a.id and t.slug = $%d
+		)`, len(args))
+	}
+
+	orderBy := "a.published_at desc nulls last, a.id desc"
+	switch filter.Sort {
+	case "hot":
+		orderBy = "coalesce(a.view_count, 0) / power(greatest(extract(epoch from (now() - coalesce(a.published_at, a.created_at))) / 3600, 0) + 1, 0.8) desc, a.published_at desc nulls last"
+	case "random":
+		orderBy = "random()"
 	}
 
 	countQuery := fmt.Sprintf(`
 		select count(*)
 		from articles a
 		join modules m on m.id = a.module_id
+		join domains d on d.id = m.domain_id
 		where %s
-	`, filter)
+	`, whereClause)
 
 	var total int64
 	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
@@ -42,20 +69,22 @@ func (r *Repository) ListPublished(ctx context.Context, moduleSlug string, page 
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
 			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.created_at, a.updated_at
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
+		join domains d on d.id = m.domain_id
 		join users u on u.id = a.author_id
 		where %s
-		order by a.published_at desc nulls last, a.id desc
+		order by %s
 		limit $%d offset $%d
-	`, filter, len(args)-1, len(args))
+	`, whereClause, orderBy, len(args)-1, len(args))
 
 	items, err := r.scanMany(ctx, query, args...)
 	if err != nil {
 		return nil, 0, err
 	}
-	return items, total, nil
+	return r.withTags(ctx, items), total, nil
 }
 
 func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Article, int64, error) {
@@ -82,7 +111,8 @@ func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pag
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
 			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.created_at, a.updated_at
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join users u on u.id = a.author_id
@@ -95,7 +125,7 @@ func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pag
 	if err != nil {
 		return nil, 0, err
 	}
-	return items, total, nil
+	return r.withTags(ctx, items), total, nil
 }
 
 func (r *Repository) FindPublishedByID(ctx context.Context, id int64) (Article, error) {
@@ -103,13 +133,46 @@ func (r *Repository) FindPublishedByID(ctx context.Context, id int64) (Article, 
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
 			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.created_at, a.updated_at
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
+		join domains d on d.id = m.domain_id
 		join users u on u.id = a.author_id
 		where a.id = $1 and a.status = 'published' and a.deleted_at is null
+			and d.deleted_at is null and d.is_active = true
 	`
-	return r.scanOne(ctx, query, id)
+	item, err := r.scanOne(ctx, query, id)
+	if err != nil {
+		return Article{}, err
+	}
+	return r.withTag(ctx, item), nil
+}
+
+func (r *Repository) IncrementViewCount(ctx context.Context, id int64) error {
+	const query = `
+		update articles a
+		set view_count = a.view_count + 1
+		from modules m
+		join domains d on d.id = m.domain_id
+		where a.id = $1
+			and a.module_id = m.id
+			and a.status = 'published'
+			and a.deleted_at is null
+			and d.deleted_at is null
+			and d.is_active = true
+		returning a.id
+	`
+
+	var updatedID int64
+	err := r.db.QueryRow(ctx, query, id).Scan(&updatedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("increment article view count: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) ListMine(ctx context.Context, authorID int64, status string, page int, pageSize int) ([]Article, int64, error) {
@@ -136,7 +199,8 @@ func (r *Repository) ListMine(ctx context.Context, authorID int64, status string
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
 			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.created_at, a.updated_at
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join users u on u.id = a.author_id
@@ -149,13 +213,13 @@ func (r *Repository) ListMine(ctx context.Context, authorID int64, status string
 	if err != nil {
 		return nil, 0, err
 	}
-	return items, total, nil
+	return r.withTags(ctx, items), total, nil
 }
 
 func (r *Repository) Create(ctx context.Context, input CreateArticleInput) (Article, error) {
 	const query = `
-		insert into articles (module_id, author_id, title, summary, content_md, status)
-		select $1, $2, $3, $4, $5, 'pending_review'
+		insert into articles (module_id, author_id, title, summary, content_md, status, word_count, reading_minutes)
+		select $1, $2, $3, $4, $5, $6, $7, $8
 		where exists (
 			select 1 from modules
 			where id = $1 and is_active = true and deleted_at is null
@@ -164,14 +228,83 @@ func (r *Repository) Create(ctx context.Context, input CreateArticleInput) (Arti
 	`
 
 	var id int64
-	if err := r.db.QueryRow(ctx, query, input.ModuleID, input.AuthorID, input.Title, input.Summary, input.ContentMD).Scan(&id); err != nil {
+	if err := r.db.QueryRow(
+		ctx,
+		query,
+		input.ModuleID,
+		input.AuthorID,
+		input.Title,
+		input.Summary,
+		input.ContentMD,
+		input.Status,
+		input.WordCount,
+		input.ReadingMinutes,
+	).Scan(&id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Article{}, ErrNotFound
 		}
 		return Article{}, fmt.Errorf("create article: %w", err)
 	}
 
+	if err := r.SetArticleTags(ctx, id, input.Tags); err != nil {
+		return Article{}, err
+	}
 	return r.FindByIDForAuthor(ctx, id, input.AuthorID)
+}
+
+func (r *Repository) CreateRevision(ctx context.Context, originalID int64, authorID int64, input UpdateArticleInput) (Article, error) {
+	if input.Title == nil || input.Summary == nil || input.ContentMD == nil || input.WordCount == nil || input.ReadingMinutes == nil {
+		return Article{}, ErrInvalidInput
+	}
+
+	const query = `
+		insert into articles (
+			module_id, author_id, title, summary, content_md, status,
+			word_count, reading_minutes, revision_of_article_id
+		)
+		select
+			original.module_id, original.author_id, $3, $4, $5, 'pending_review',
+			$6, $7, original.id
+		from articles original
+		where original.id = $1
+			and original.author_id = $2
+			and original.status = 'published'
+			and original.deleted_at is null
+			and not exists (
+				select 1
+				from articles revision
+				where revision.revision_of_article_id = original.id
+					and revision.deleted_at is null
+					and revision.status in ('draft', 'pending_review', 'rejected')
+			)
+		returning id
+	`
+
+	var id int64
+	err := r.db.QueryRow(
+		ctx,
+		query,
+		originalID,
+		authorID,
+		*input.Title,
+		*input.Summary,
+		*input.ContentMD,
+		*input.WordCount,
+		*input.ReadingMinutes,
+	).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Article{}, ErrConflict
+	}
+	if err != nil {
+		return Article{}, fmt.Errorf("create article revision: %w", err)
+	}
+
+	if input.Tags != nil {
+		if err := r.SetArticleTags(ctx, id, *input.Tags); err != nil {
+			return Article{}, err
+		}
+	}
+	return r.FindByIDForAuthor(ctx, id, authorID)
 }
 
 func (r *Repository) FindByIDForAuthor(ctx context.Context, id int64, authorID int64) (Article, error) {
@@ -179,13 +312,18 @@ func (r *Repository) FindByIDForAuthor(ctx context.Context, id int64, authorID i
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
 			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.created_at, a.updated_at
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join users u on u.id = a.author_id
 		where a.id = $1 and a.author_id = $2 and a.deleted_at is null
 	`
-	return r.scanOne(ctx, query, id, authorID)
+	item, err := r.scanOne(ctx, query, id, authorID)
+	if err != nil {
+		return Article{}, err
+	}
+	return r.withTag(ctx, item), nil
 }
 
 func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, input UpdateArticleInput) (Article, error) {
@@ -195,10 +333,16 @@ func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, in
 			title = coalesce($3, title),
 			summary = coalesce($4, summary),
 			content_md = coalesce($5, content_md),
-			status = case when status = 'rejected' then 'pending_review' else status end,
-			reviewed_by = case when status = 'rejected' then null else reviewed_by end,
-			reviewed_at = case when status = 'rejected' then null else reviewed_at end,
-			review_note = case when status = 'rejected' then '' else review_note end,
+			word_count = coalesce($6, word_count),
+			reading_minutes = coalesce($7, reading_minutes),
+			status = case
+				when status = 'rejected' then 'pending_review'
+				when $8::varchar is not null then $8
+				else status
+			end,
+			reviewed_by = case when status = 'rejected' or $8::varchar = 'pending_review' then null else reviewed_by end,
+			reviewed_at = case when status = 'rejected' or $8::varchar = 'pending_review' then null else reviewed_at end,
+			review_note = case when status = 'rejected' or $8::varchar = 'pending_review' then '' else review_note end,
 			updated_at = now()
 		where id = $1
 			and author_id = $2
@@ -208,12 +352,29 @@ func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, in
 	`
 
 	var updatedID int64
-	err := r.db.QueryRow(ctx, query, id, authorID, input.Title, input.Summary, input.ContentMD).Scan(&updatedID)
+	err := r.db.QueryRow(
+		ctx,
+		query,
+		id,
+		authorID,
+		input.Title,
+		input.Summary,
+		input.ContentMD,
+		input.WordCount,
+		input.ReadingMinutes,
+		input.Status,
+	).Scan(&updatedID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Article{}, ErrConflict
 	}
 	if err != nil {
 		return Article{}, fmt.Errorf("update article: %w", err)
+	}
+
+	if input.Tags != nil {
+		if err := r.SetArticleTags(ctx, updatedID, *input.Tags); err != nil {
+			return Article{}, err
+		}
 	}
 
 	return r.FindByIDForAuthor(ctx, updatedID, authorID)
@@ -235,7 +396,8 @@ func (r *Repository) ListPendingReview(ctx context.Context, page int, pageSize i
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
 			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.created_at, a.updated_at
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join users u on u.id = a.author_id
@@ -248,24 +410,121 @@ func (r *Repository) ListPendingReview(ctx context.Context, page int, pageSize i
 	if err != nil {
 		return nil, 0, err
 	}
-	return items, total, nil
+	return r.withTags(ctx, items), total, nil
 }
 
 func (r *Repository) Approve(ctx context.Context, id int64, input ReviewArticleInput) (Article, error) {
-	const query = `
-		update articles
-		set
-			status = 'published',
-			reviewed_by = $2,
-			reviewed_at = now(),
-			review_note = $3,
-			published_at = now(),
-			updated_at = now()
-		where id = $1 and status = 'pending_review' and deleted_at is null
-		returning id
-	`
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return Article{}, fmt.Errorf("begin approve article: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-	return r.review(ctx, query, id, input)
+	var revisionOfID pgtype.Int8
+	err = tx.QueryRow(ctx, `
+		select revision_of_article_id
+		from articles
+		where id = $1 and status = 'pending_review' and deleted_at is null
+		for update
+	`, id).Scan(&revisionOfID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Article{}, ErrConflict
+	}
+	if err != nil {
+		return Article{}, fmt.Errorf("load article for approve: %w", err)
+	}
+
+	var approvedID int64
+	if !revisionOfID.Valid {
+		err = tx.QueryRow(ctx, `
+			update articles
+			set
+				status = 'published',
+				reviewed_by = $2,
+				reviewed_at = now(),
+				review_note = $3,
+				published_at = now(),
+				updated_at = now()
+			where id = $1 and status = 'pending_review' and deleted_at is null
+			returning id
+		`, id, input.ReviewerID, input.ReviewNote).Scan(&approvedID)
+	} else {
+		err = tx.QueryRow(ctx, `
+			update articles original
+			set
+				title = revision.title,
+				summary = revision.summary,
+				content_md = revision.content_md,
+				word_count = revision.word_count,
+				reading_minutes = revision.reading_minutes,
+				revision_count = original.revision_count + 1,
+				reviewed_by = $2,
+				reviewed_at = now(),
+				review_note = $3,
+				updated_at = now()
+			from articles revision
+			where revision.id = $1
+				and revision.revision_of_article_id = original.id
+				and revision.status = 'pending_review'
+				and revision.deleted_at is null
+				and original.status = 'published'
+				and original.deleted_at is null
+			returning original.id
+		`, id, input.ReviewerID, input.ReviewNote).Scan(&approvedID)
+		if err == nil {
+			revisionTags, tagErr := r.tagNamesTx(ctx, tx, id)
+			if tagErr != nil {
+				err = tagErr
+			}
+			if err == nil {
+				err = r.replaceArticleTagsTx(ctx, tx, approvedID, revisionTags)
+			}
+			if err == nil {
+				err = r.replaceArticleTagsTx(ctx, tx, id, nil)
+			}
+		}
+		if err == nil {
+			_, err = tx.Exec(ctx, `
+				update articles
+				set
+					status = 'published',
+					reviewed_by = $2,
+					reviewed_at = now(),
+					review_note = $3,
+					deleted_at = now(),
+					updated_at = now()
+				where id = $1
+			`, id, input.ReviewerID, input.ReviewNote)
+		}
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Article{}, ErrConflict
+	}
+	if err != nil {
+		return Article{}, fmt.Errorf("approve article: %w", err)
+	}
+
+	if !revisionOfID.Valid {
+		if _, err := tx.Exec(ctx, `
+			insert into notifications (recipient_id, actor_id, type, article_id)
+			select uf.follower_id, a.author_id, 'followee_article', a.id
+			from articles a
+			join user_follows uf on uf.followed_id = a.author_id
+			join users follower on follower.id = uf.follower_id
+			where a.id = $1
+				and uf.follower_id <> a.author_id
+				and follower.status = 'active'
+				and follower.deleted_at is null
+		`, approvedID); err != nil {
+			return Article{}, fmt.Errorf("create followee article notifications: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Article{}, fmt.Errorf("commit approve article: %w", err)
+	}
+
+	return r.findByID(ctx, approvedID)
 }
 
 func (r *Repository) Reject(ctx context.Context, id int64, input ReviewArticleInput) (Article, error) {
@@ -304,6 +563,21 @@ func (r *Repository) RestoreArchived(ctx context.Context, id int64) (Article, er
 	return r.updateStatus(ctx, query, id)
 }
 
+func (r *Repository) findByID(ctx context.Context, id int64) (Article, error) {
+	const query = `
+		select
+			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
+			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
+		from articles a
+		join modules m on m.id = a.module_id
+		join users u on u.id = a.author_id
+		where a.id = $1 and a.deleted_at is null
+	`
+	return r.scanOne(ctx, query, id)
+}
+
 func (r *Repository) updateStatus(ctx context.Context, query string, id int64) (Article, error) {
 	var updatedID int64
 	err := r.db.QueryRow(ctx, query, id).Scan(&updatedID)
@@ -318,7 +592,8 @@ func (r *Repository) updateStatus(ctx context.Context, query string, id int64) (
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
 			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.created_at, a.updated_at
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join users u on u.id = a.author_id
@@ -341,13 +616,175 @@ func (r *Repository) review(ctx context.Context, query string, id int64, input R
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
 			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.created_at, a.updated_at
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join users u on u.id = a.author_id
 		where a.id = $1 and a.deleted_at is null
 	`
 	return r.scanOne(ctx, findQuery, reviewedID)
+}
+
+func (r *Repository) SetArticleTags(ctx context.Context, articleID int64, names []string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin set article tags: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := r.replaceArticleTagsTx(ctx, tx, articleID, names); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit set article tags: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) tagNamesTx(ctx context.Context, tx pgx.Tx, articleID int64) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		select t.name
+		from article_tags at
+		join tags t on t.id = at.tag_id
+		where at.article_id = $1
+		order by at.created_at asc, t.name asc
+	`, articleID)
+	if err != nil {
+		return nil, fmt.Errorf("query revision tags: %w", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan revision tag: %w", err)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate revision tags: %w", err)
+	}
+	return names, nil
+}
+
+func (r *Repository) replaceArticleTagsTx(ctx context.Context, tx pgx.Tx, articleID int64, names []string) error {
+	rows, err := tx.Query(ctx, `select tag_id from article_tags where article_id = $1`, articleID)
+	if err != nil {
+		return fmt.Errorf("query existing article tags: %w", err)
+	}
+	var oldTagIDs []int64
+	for rows.Next() {
+		var tagID int64
+		if err := rows.Scan(&tagID); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan existing article tag: %w", err)
+		}
+		oldTagIDs = append(oldTagIDs, tagID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate existing article tags: %w", err)
+	}
+	rows.Close()
+
+	if _, err := tx.Exec(ctx, `delete from article_tags where article_id = $1`, articleID); err != nil {
+		return fmt.Errorf("delete article tags: %w", err)
+	}
+	for _, tagID := range oldTagIDs {
+		if _, err := tx.Exec(ctx, `update tags set usage_count = greatest(usage_count - 1, 0), updated_at = now() where id = $1`, tagID); err != nil {
+			return fmt.Errorf("decrement tag usage: %w", err)
+		}
+	}
+
+	seen := map[string]struct{}{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		slug := tagSlug(name)
+		if slug == "" {
+			continue
+		}
+		if _, ok := seen[slug]; ok {
+			continue
+		}
+		seen[slug] = struct{}{}
+
+		var tagID int64
+		err := tx.QueryRow(ctx, `
+			insert into tags (name, slug)
+			values ($1, $2)
+			on conflict (slug) do update set name = excluded.name, updated_at = now()
+			returning id
+		`, name, slug).Scan(&tagID)
+		if err != nil {
+			return fmt.Errorf("upsert tag: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `insert into article_tags (article_id, tag_id) values ($1, $2) on conflict do nothing`, articleID, tagID); err != nil {
+			return fmt.Errorf("insert article tag: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `update tags set usage_count = usage_count + 1, updated_at = now() where id = $1`, tagID); err != nil {
+			return fmt.Errorf("increment tag usage: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *Repository) withTag(ctx context.Context, item Article) Article {
+	item.Tags = r.loadTags(ctx, []int64{item.ID})[item.ID]
+	return item
+}
+
+func (r *Repository) withTags(ctx context.Context, items []Article) []Article {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	tags := r.loadTags(ctx, ids)
+	for i := range items {
+		items[i].Tags = tags[items[i].ID]
+	}
+	return items
+}
+
+func (r *Repository) loadTags(ctx context.Context, articleIDs []int64) map[int64][]Tag {
+	out := map[int64][]Tag{}
+	if len(articleIDs) == 0 {
+		return out
+	}
+	rows, err := r.db.Query(ctx, `
+		select at.article_id, t.id, t.name, t.slug, t.usage_count
+		from article_tags at
+		join tags t on t.id = at.tag_id
+		where at.article_id = any($1)
+		order by at.created_at asc, t.name asc
+	`, articleIDs)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var articleID int64
+		var tag Tag
+		if err := rows.Scan(&articleID, &tag.ID, &tag.Name, &tag.Slug, &tag.UsageCount); err != nil {
+			continue
+		}
+		out[articleID] = append(out[articleID], tag)
+	}
+	return out
+}
+
+func tagSlug(name string) string {
+	slug := strings.ToLower(strings.TrimSpace(name))
+	slug = strings.ReplaceAll(slug, "_", "-")
+	slug = tagSlugUnsafe.ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-")
+	runes := []rune(slug)
+	if len(runes) > 40 {
+		slug = strings.Trim(string(runes[:40]), "-")
+	}
+	return slug
 }
 
 func (r *Repository) scanMany(ctx context.Context, query string, args ...interface{}) ([]Article, error) {
@@ -403,6 +840,11 @@ func scanArticle(scanner articleScanner) (Article, error) {
 		&item.Status,
 		&item.ReviewNote,
 		&item.PublishedAt,
+		&item.RevisionOfID,
+		&item.WordCount,
+		&item.ReadingMinutes,
+		&item.ViewCount,
+		&item.RevisionCount,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	)

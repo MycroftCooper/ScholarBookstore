@@ -2,6 +2,9 @@ import { apiRequest } from "./client";
 
 export type ModuleSummary = {
   id: number;
+  domainId: number;
+  domainSlug: string;
+  domainName: string;
   slug: string;
   name: string;
   description: string;
@@ -22,6 +25,7 @@ export function getModule(slug: string) {
 }
 
 export function createModule(input: {
+  domainId: number;
   slug: string;
   name: string;
   description: string;
@@ -37,6 +41,7 @@ export function createModule(input: {
 export function updateModule(
   id: number,
   input: Partial<{
+    domainId: number;
     name: string;
     description: string;
     sortOrder: number;

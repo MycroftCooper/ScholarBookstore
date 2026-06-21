@@ -13,6 +13,7 @@ type ModuleRepository interface {
 	FindBySlug(ctx context.Context, slug string) (Module, error)
 	Create(ctx context.Context, input CreateModuleInput) (Module, error)
 	Update(ctx context.Context, id int64, input UpdateModuleInput) (Module, error)
+	FindByID(ctx context.Context, id int64) (Module, error)
 }
 
 type Service struct {
@@ -49,7 +50,7 @@ func (s *Service) Create(ctx context.Context, input CreateModuleInput) (PublicMo
 	input.Name = strings.TrimSpace(input.Name)
 	input.Description = strings.TrimSpace(input.Description)
 
-	if !validSlug(input.Slug) || input.Name == "" || len(input.Name) > 80 || len(input.Description) > 1000 {
+	if input.DomainID <= 0 || !validSlug(input.Slug) || input.Name == "" || len(input.Name) > 80 || len(input.Description) > 1000 {
 		return PublicModule{}, ErrInvalidInput
 	}
 
@@ -70,6 +71,9 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateModuleInput)
 			return PublicModule{}, ErrInvalidInput
 		}
 		input.Name = &trimmed
+	}
+	if input.DomainID != nil && *input.DomainID <= 0 {
+		return PublicModule{}, ErrInvalidInput
 	}
 	if input.Description != nil {
 		trimmed := strings.TrimSpace(*input.Description)

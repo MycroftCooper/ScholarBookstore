@@ -11,7 +11,7 @@ import (
 
 type CommentRepository interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
-	ListByArticle(ctx context.Context, articleID int64, page int, pageSize int) ([]Comment, int64, error)
+	ListByArticle(ctx context.Context, articleID int64, viewerID int64, sort string, page int, pageSize int) ([]Comment, int64, error)
 	ListMine(ctx context.Context, authorID int64, page int, pageSize int) ([]Comment, int64, error)
 	ListAdmin(ctx context.Context, page int, pageSize int) ([]Comment, int64, error)
 	CreateTopLevel(ctx context.Context, authorID int64, articleID int64, content string) (Comment, error)
@@ -21,6 +21,8 @@ type CommentRepository interface {
 	CreateReply(ctx context.Context, tx pgx.Tx, authorID int64, parent ParentComment, content string) (Comment, error)
 	Delete(ctx context.Context, id int64, userID int64, canDeleteAny bool) error
 	SetVisibility(ctx context.Context, id int64, visibility string) (Comment, error)
+	SetVote(ctx context.Context, commentID int64, userID int64, value int) (Comment, error)
+	ClearVote(ctx context.Context, commentID int64, userID int64) (Comment, error)
 }
 
 type NotificationRepository interface {
@@ -47,16 +49,49 @@ func NewService(commentRepo CommentRepository, notificationRepo NotificationRepo
 	}
 }
 
-func (s *Service) ListByArticle(ctx context.Context, articleID int64, page int, pageSize int) (Page, error) {
+func (s *Service) ListByArticle(ctx context.Context, articleID int64, viewerID int64, sort string, page int, pageSize int) (Page, error) {
 	if articleID <= 0 {
 		return Page{}, ErrNotFound
 	}
+	if viewerID <= 0 {
+		return Page{}, ErrForbidden
+	}
+	sort = strings.TrimSpace(sort)
+	if sort == "" {
+		sort = "latest"
+	}
+	if sort != "latest" && sort != "hot" {
+		return Page{}, ErrInvalidInput
+	}
 	page, pageSize = normalizePage(page, pageSize)
-	items, total, err := s.comments.ListByArticle(ctx, articleID, page, pageSize)
+	items, total, err := s.comments.ListByArticle(ctx, articleID, viewerID, sort, page, pageSize)
 	if err != nil {
 		return Page{}, err
 	}
 	return Page{Number: page, Size: pageSize, Total: total, Comments: ToPublicList(items)}, nil
+}
+
+func (s *Service) Vote(ctx context.Context, commentID int64, userID int64, value int) (PublicComment, error) {
+	if commentID <= 0 || userID <= 0 {
+		return PublicComment{}, ErrNotFound
+	}
+	if value != -1 && value != 0 && value != 1 {
+		return PublicComment{}, ErrInvalidInput
+	}
+
+	var (
+		item Comment
+		err  error
+	)
+	if value == 0 {
+		item, err = s.comments.ClearVote(ctx, commentID, userID)
+	} else {
+		item, err = s.comments.SetVote(ctx, commentID, userID, value)
+	}
+	if err != nil {
+		return PublicComment{}, err
+	}
+	return ToPublic(item), nil
 }
 
 func (s *Service) CreateTopLevel(ctx context.Context, authorID int64, articleID int64, content string) (PublicComment, error) {

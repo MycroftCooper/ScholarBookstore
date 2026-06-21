@@ -17,16 +17,20 @@ type Handler struct {
 }
 
 type createArticleRequest struct {
-	ModuleID  int64  `json:"moduleId"`
-	Title     string `json:"title"`
-	Summary   string `json:"summary"`
-	ContentMD string `json:"contentMd"`
+	ModuleID  int64    `json:"moduleId"`
+	Title     string   `json:"title"`
+	Summary   string   `json:"summary"`
+	ContentMD string   `json:"contentMd"`
+	Status    string   `json:"status"`
+	Tags      []string `json:"tags"`
 }
 
 type updateArticleRequest struct {
-	Title     *string `json:"title"`
-	Summary   *string `json:"summary"`
-	ContentMD *string `json:"contentMd"`
+	Title     *string   `json:"title"`
+	Summary   *string   `json:"summary"`
+	ContentMD *string   `json:"contentMd"`
+	Status    *string   `json:"status"`
+	Tags      *[]string `json:"tags"`
 }
 
 type reviewArticleRequest struct {
@@ -44,7 +48,16 @@ func (h *Handler) ListPublished(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.ListPublished(r.Context(), r.URL.Query().Get("moduleSlug"), page, pageSize)
+	result, err := h.service.ListPublished(r.Context(), PublishedArticleFilter{
+		ModuleSlug: r.URL.Query().Get("moduleSlug"),
+		Query:      r.URL.Query().Get("q"),
+		TagSlug:    r.URL.Query().Get("tag"),
+		Sort:       r.URL.Query().Get("sort"),
+	}, page, pageSize)
+	if errors.Is(err, ErrInvalidInput) {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "查询参数不合法", nil)
+		return
+	}
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
 		return
@@ -92,6 +105,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Title:     req.Title,
 		Summary:   req.Summary,
 		ContentMD: req.ContentMD,
+		Status:    req.Status,
+		Tags:      req.Tags,
 	})
 	if errors.Is(err, ErrInvalidInput) {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
@@ -187,6 +202,8 @@ func (h *Handler) UpdateOwn(w http.ResponseWriter, r *http.Request) {
 		Title:     req.Title,
 		Summary:   req.Summary,
 		ContentMD: req.ContentMD,
+		Status:    req.Status,
+		Tags:      req.Tags,
 	})
 	if errors.Is(err, ErrInvalidInput) {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)

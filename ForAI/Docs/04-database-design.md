@@ -74,6 +74,10 @@
 | `password_hash` | `text` | not null | bcrypt 哈希 |
 | `role` | `varchar(20)` | not null | `user`、`reviewer`、`admin` |
 | `status` | `varchar(20)` | not null | `active`、`disabled` |
+| `avatar_url` | `text` | not null default '' | 头像公开 URL，未上传时为空 |
+| `bio` | `varchar(200)` | not null default '' | 个人简介 |
+| `school` | `varchar(100)` | not null default '' | 学校 |
+| `company` | `varchar(100)` | not null default '' | 公司 |
 | `created_at` | `timestamptz` | not null | 创建时间 |
 | `updated_at` | `timestamptz` | not null | 更新时间 |
 | `deleted_at` | `timestamptz` | null | 软删除时间 |
@@ -90,13 +94,35 @@
 - 邮箱和用户名比较必须大小写不敏感。
 - 禁用用户不能登录。
 
-### 3.2 modules
+### 3.2 domains
+
+领域表。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 领域 ID |
+| `slug` | `varchar(80)` | not null | URL/管理标识 |
+| `name` | `varchar(80)` | not null | 领域名称 |
+| `description` | `text` | not null default '' | 领域说明 |
+| `sort_order` | `integer` | not null default 0 | 排序 |
+| `is_active` | `boolean` | not null default true | 是否启用 |
+| `created_at` | `timestamptz` | not null | 创建时间 |
+| `updated_at` | `timestamptz` | not null | 更新时间 |
+| `deleted_at` | `timestamptz` | null | 软删除时间 |
+
+索引：
+
+- `unique index domains_slug_unique on domains (slug) where deleted_at is null`
+- `index domains_active_sort_idx on domains (is_active, sort_order)`
+
+### 3.3 modules
 
 版块表。
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
 | `id` | `bigserial` | PK | 版块 ID |
+| `domain_id` | `bigint` | FK domains(id), not null | 所属领域 |
 | `slug` | `varchar(80)` | not null | URL 标识 |
 | `name` | `varchar(80)` | not null | 版块名称 |
 | `description` | `text` | not null default '' | 版块说明 |
@@ -110,12 +136,13 @@
 
 - `unique index modules_slug_unique on modules (slug) where deleted_at is null`
 - `index modules_active_sort_idx on modules (is_active, sort_order)`
+- `index modules_domain_sort_idx on modules (domain_id, is_active, sort_order) where deleted_at is null`
 
 说明：
 
 - 普通用户只能向 `is_active = true` 且未删除版块投稿。
 
-### 3.3 articles
+### 3.4 articles
 
 文章表。
 
@@ -133,6 +160,11 @@
 | `reviewed_at` | `timestamptz` | null | 审核时间 |
 | `review_note` | `text` | not null default '' | 审核说明或拒绝原因 |
 | `published_at` | `timestamptz` | null | 发布时间 |
+| `revision_of_article_id` | `bigint` | FK articles(id), null | 修订稿指向的原文 ID；普通文章为空 |
+| `word_count` | `integer` | not null default 0 | 正文字数/字符数，用于文章元数据 |
+| `reading_minutes` | `integer` | not null default 1 | 预计阅读时长，最小 1 分钟 |
+| `view_count` | `bigint` | not null default 0 | 已发布文章浏览量 |
+| `revision_count` | `integer` | not null default 0 | 修订版本数，修订模块接入后递增 |
 | `created_at` | `timestamptz` | not null | 创建时间 |
 | `updated_at` | `timestamptz` | not null | 更新时间 |
 | `deleted_at` | `timestamptz` | null | 软删除时间 |
@@ -143,14 +175,53 @@
 - `index articles_author_created_idx on articles (author_id, created_at desc) where deleted_at is null`
 - `index articles_status_created_idx on articles (status, created_at desc) where deleted_at is null`
 - `unique index articles_slug_unique on articles (slug) where slug is not null and deleted_at is null`
+- `unique index articles_active_revision_unique on articles (revision_of_article_id) where revision_of_article_id is not null and deleted_at is null and status in ('draft', 'pending_review', 'rejected')`
+- `index articles_revision_of_idx on articles (revision_of_article_id) where revision_of_article_id is not null`
 
 说明：
 
 - 游客只能查看 `status = 'published'` 且未删除文章。
 - 作者可查看自己的未发布文章。
 - 审核员和管理员可查看待审核文章。
+- 作者修订已发布文章时创建一条 `pending_review` 修订稿，原文保持 `published`。
+- 修订稿审核通过后替换原文内容并递增原文 `revision_count`，修订稿软删除。
 
-### 3.4 comments
+### 3.5 tags 与 article_tags
+
+标签表与文章标签关系表。
+
+`tags`：
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 标签 ID |
+| `name` | `varchar(30)` | not null | 展示名称 |
+| `slug` | `varchar(40)` | not null | 去重标识，支持中英文与数字 |
+| `usage_count` | `integer` | not null default 0 | 使用次数 |
+| `created_at` | `timestamptz` | not null | 创建时间 |
+| `updated_at` | `timestamptz` | not null | 更新时间 |
+
+`article_tags`：
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `article_id` | `bigint` | FK articles(id), PK | 文章 ID |
+| `tag_id` | `bigint` | FK tags(id), PK | 标签 ID |
+| `created_at` | `timestamptz` | not null | 绑定时间 |
+
+索引：
+
+- `unique index tags_slug_unique on tags (slug)`
+- `index tags_usage_count_idx on tags (usage_count desc, name asc)`
+- `index article_tags_tag_idx on article_tags (tag_id, article_id)`
+
+说明：
+
+- 投稿和编辑文章最多绑定 9 个标签。
+- 标签自由创建，按 slug 去重。
+- 文章标签变更时同步维护 `tags.usage_count`。
+
+### 3.6 comments
 
 文章评论表，同时支持评论回复。
 
@@ -182,7 +253,32 @@
 - 创建回复时必须校验父评论属于同一篇文章。
 - 创建回复时，如果 `reply_to_user_id != author_id`，必须创建通知。
 
-### 3.5 notifications
+### 3.6a comment_votes
+
+评论赞踩表。每个用户对同一条评论最多保留一条赞或踩记录。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 赞踩 ID |
+| `comment_id` | `bigint` | FK comments(id), not null | 被赞踩的评论 |
+| `user_id` | `bigint` | FK users(id), not null | 操作用户 |
+| `value` | `smallint` | not null | `1` 表示赞，`-1` 表示踩 |
+| `created_at` | `timestamptz` | not null | 创建时间 |
+| `updated_at` | `timestamptz` | not null | 更新时间 |
+
+索引：
+
+- `unique index comment_votes_comment_user_unique on comment_votes (comment_id, user_id)`
+- `index comment_votes_user_created_idx on comment_votes (user_id, created_at desc)`
+- `index comment_votes_comment_value_idx on comment_votes (comment_id, value)`
+
+说明：
+
+- 再次点击同一种赞/踩时前端传 `value = 0`，后端删除该用户的赞踩记录。
+- 从赞切换到踩或从踩切换到赞时，后端更新同一条记录。
+- 只能对可见、未删除且所属文章已发布的评论赞踩。
+
+### 3.6 notifications
 
 站内通知表。
 
@@ -206,12 +302,12 @@
 
 说明：
 
-- MVP 做 `comment_reply` 和 `article_comment` 类型。
+- MVP 已做 `comment_reply`、`article_comment`、`article_bookmark`、`followee_article` 类型。
 - 用户只能查看自己的通知。
 - 通知删除为软删除。
 - 回复自己不创建通知。
 
-### 3.6 article_images
+### 3.7 article_images
 
 文章图片表。
 
@@ -239,7 +335,53 @@
 - 上传后未绑定文章的图片需要后台清理策略。TODO：清理周期后续确认。
 - 图片软删除不一定立即删除物理文件，物理清理策略后续确认。
 
-### 3.7 user_follows
+### 3.8 bookmark_collections
+
+用户收藏夹表。默认收藏夹由后端在用户首次查看或收藏时自动创建。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 收藏夹 ID |
+| `user_id` | `bigint` | FK users(id), not null | 所属用户 |
+| `name` | `varchar(80)` | not null | 收藏夹名称 |
+| `is_default` | `boolean` | not null default false | 是否默认收藏夹 |
+| `created_at` | `timestamptz` | not null | 创建时间 |
+| `updated_at` | `timestamptz` | not null | 更新时间 |
+| `deleted_at` | `timestamptz` | null | 软删除时间 |
+
+索引：
+
+- `unique index bookmark_collections_default_unique on bookmark_collections (user_id) where is_default = true and deleted_at is null`
+- `unique index bookmark_collections_user_name_unique on bookmark_collections (user_id, lower(name)) where deleted_at is null`
+- `index bookmark_collections_user_created_idx on bookmark_collections (user_id, created_at desc) where deleted_at is null`
+
+### 3.9 article_bookmarks
+
+文章收藏表。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 收藏 ID |
+| `collection_id` | `bigint` | FK bookmark_collections(id), not null | 所属收藏夹 |
+| `article_id` | `bigint` | FK articles(id), not null | 被收藏文章 |
+| `user_id` | `bigint` | FK users(id), not null | 收藏用户 |
+| `created_at` | `timestamptz` | not null | 收藏时间 |
+| `deleted_at` | `timestamptz` | null | 取消收藏时间 |
+
+索引：
+
+- `unique index article_bookmarks_user_article_unique on article_bookmarks (user_id, article_id) where deleted_at is null`
+- `index article_bookmarks_collection_created_idx on article_bookmarks (collection_id, created_at desc) where deleted_at is null`
+- `index article_bookmarks_article_created_idx on article_bookmarks (article_id, created_at desc) where deleted_at is null`
+- `index article_bookmarks_user_created_idx on article_bookmarks (user_id, created_at desc) where deleted_at is null`
+
+说明：
+
+- 用户只能收藏 `published` 且未删除文章。
+- 同一用户对同一篇文章只能有一个未删除收藏。
+- 收藏他人文章时创建 `article_bookmark` 通知。
+
+### 3.10 user_follows
 
 用户关注关系表。
 
@@ -262,6 +404,30 @@
 - 不能重复关注同一用户（唯一索引保证）。
 - 取关时物理删除记录（不适用软删除，关注关系是轻量操作）。
 - 查询粉丝数/关注数使用 `count(*)` 配合索引。
+- 被关注者文章审核通过为新发布文章时，后端在审核事务中创建 `followee_article` 通知。
+
+### 3.11 article_reports
+
+文章举报表。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 举报 ID |
+| `article_id` | `bigint` | FK articles(id), not null | 被举报文章 |
+| `reporter_id` | `bigint` | FK users(id), not null | 举报人 |
+| `reason` | `text` | not null | 举报原因 |
+| `status` | `varchar(20)` | not null default `pending` | `pending`、`resolved`、`rejected` |
+| `handled_by` | `bigint` | FK users(id), null | 处理人 |
+| `handled_at` | `timestamptz` | null | 处理时间 |
+| `handle_note` | `text` | not null default '' | 处理说明 |
+| `created_at` | `timestamptz` | not null | 创建时间 |
+| `updated_at` | `timestamptz` | not null | 更新时间 |
+| `deleted_at` | `timestamptz` | null | 软删除时间 |
+
+索引：
+
+- `unique index article_reports_pending_unique on article_reports (article_id, reporter_id) where status = 'pending' and deleted_at is null`
+- `index article_reports_status_created_idx on article_reports (status, created_at desc) where deleted_at is null`
 
 ## 4. 外键策略
 

@@ -16,6 +16,12 @@ type CreateArticleCommentInput struct {
 	CommentID   int64
 }
 
+type CreateArticleBookmarkInput struct {
+	RecipientID int64
+	ActorID     int64
+	ArticleID   int64
+}
+
 type Notification struct {
 	ID            int64
 	RecipientID   int64

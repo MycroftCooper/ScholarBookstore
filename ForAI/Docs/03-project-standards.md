@@ -43,8 +43,8 @@ apps/web/
     register/
     modules/
     articles/
-    submit/
     me/
+      submit/
     admin/
   components/
     ui/

@@ -6,18 +6,22 @@
 
 - 项目初始化、数据库 migration、Go API 框架。
 - 认证系统。
-- 版块、文章、投稿、审核。
+- 领域、版块、文章、投稿、审核。
 - 前端首页、登录、注册、版块、文章详情、投稿、个人中心、我的投稿、投稿编辑、我的评论、我的通知、管理后台。
 - 评论、回复、删除评论。
 - 顶级文章评论通知、评论回复通知。
 - 图片上传到本地 `uploads`，Markdown 引用图片 URL。
-- 管理后台版块管理、文章隐藏/恢复、评论隐藏/恢复/删除。
+- 管理后台领域/版块管理、文章隐藏/恢复、评论隐藏/恢复/删除。
+- 公开文章搜索与发现页，包括关键词搜索、Tag 筛选、热点聚合和随机文章。
+- 评论赞踩与最新/最热排序。
+- 收藏文章、默认收藏夹、自定义收藏夹、我的收藏页和 `article_bookmark` 通知。
+- 关注/取关用户、关注/粉丝列表、作者页关注按钮和 `followee_article` 通知。
+- 文章举报、后台举报列表与处理。
 
 当前 MVP 未纳入：
 
 - PWA 安装与离线能力。
 - 用户角色管理 UI。
-- 全文搜索。
 - 生产部署自动化。
 
 本地验收命令：
@@ -68,6 +72,7 @@ npm.cmd run typecheck
 
 - `users`
 - `modules`
+- `domains`
 - `articles`
 - `comments`
 - `notifications`
@@ -138,14 +143,15 @@ npm.cmd run typecheck
 
 目标：
 
-- 实现版块列表、版块详情。
+- 实现领域列表、领域详情、版块列表、版块详情。
 - 实现投稿、文章列表、文章详情、我的投稿。
 
 输出：
 
-- modules 业务包。
+- domains、modules 业务包。
 - articles 业务包。
-- 必要的管理版块接口。
+- 文章主链路补充：草稿保存、提交审核、我的草稿、状态筛选、已发布文章修订重审、Tag、文章 TOC、文章元数据（字数、预计阅读时长、浏览量、修订次数）。
+- 必要的管理领域和版块接口。
 
 验收标准：
 
@@ -217,7 +223,7 @@ npm.cmd run typecheck
 
 验收标准：
 
-- 游客可看评论和回复。
+- 游客不可看评论和回复。
 - 登录用户可评论和回复。
 - 回复评论时正确记录 `parent_id` 和 `reply_to_user_id`。
 - 普通用户只能删除自己的评论或回复。
@@ -289,13 +295,13 @@ npm.cmd run typecheck
 
 输出：
 
-- `users` 表新增 `avatar_url`、`bio`、`school`、`company` 字段（DB migration）。
+- `users` 表新增 `avatar_url`、`bio`、`school`、`company` 字段（DB migration）。已在认证 & 用户资料模块落地。
 - `user_follows` 表（DB migration）。
 - 通知类型扩展 `article_bookmark`、`followee_article`（DB migration）。
 - 后端：用户资料编辑 API、作者公开信息 API、关注/取关 API、关注列表/粉丝列表 API。
 - 后端：文章审核通过时批量创建 `followee_article` 通知。
-- 前端：`/me/profile` 编辑资料页（含预览主页按钮）。
-- 前端：`/authors/[username]` 作者公开主页（含关注按钮、关注统计）。
+- 前端：`/me/profile` 编辑资料页（含预览主页按钮）。已在认证 & 用户资料模块落地。
+- 前端：`/authors/[username]` 作者公开主页已落地资料和已发布文章列表；关注按钮与关注统计在关注模块接真实数据。
 - 前端：`/me/following` 我关注的用户页。
 - 前端：`/me/followers` 关注我的用户页。
 - 前端：文章详情页作者信息区增加关注按钮。

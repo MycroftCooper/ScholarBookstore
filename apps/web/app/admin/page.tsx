@@ -21,13 +21,19 @@ import {
   type CommentItem,
 } from "@/lib/api/comments";
 import {
+  createDomain,
+  listDomains,
+  updateDomain,
+  type DomainSummary,
+} from "@/lib/api/domains";
+import {
   createModule,
   listModules,
   updateModule,
   type ModuleSummary,
 } from "@/lib/api/modules";
 
-type AdminTab = "reviews" | "modules" | "content";
+type AdminTab = "reviews" | "domains" | "modules" | "content";
 
 const statusLabel: Record<ArticleSummary["status"], string> = {
   draft: "草稿",
@@ -43,12 +49,24 @@ export default function AdminPage() {
   const [reviews, setReviews] = useState<ArticleSummary[]>([]);
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [comments, setComments] = useState<CommentItem[]>([]);
+  const [domains, setDomains] = useState<DomainSummary[]>([]);
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [notes, setNotes] = useState<Record<number, string>>({});
-  const [moduleDrafts, setModuleDrafts] = useState<
-    Record<number, Pick<ModuleSummary, "name" | "description" | "sortOrder" | "isActive">>
+  const [domainDrafts, setDomainDrafts] = useState<
+    Record<number, Pick<DomainSummary, "name" | "description" | "sortOrder" | "isActive">>
   >({});
+  const [moduleDrafts, setModuleDrafts] = useState<
+    Record<number, Pick<ModuleSummary, "domainId" | "name" | "description" | "sortOrder" | "isActive">>
+  >({});
+  const [newDomain, setNewDomain] = useState({
+    slug: "",
+    name: "",
+    description: "",
+    sortOrder: 0,
+    isActive: true,
+  });
   const [newModule, setNewModule] = useState({
+    domainId: 0,
     slug: "",
     name: "",
     description: "",
@@ -82,11 +100,15 @@ export default function AdminPage() {
       setComments(commentItems);
 
       if (current.role === "admin") {
-        const moduleItems = await listModules(true);
+        const [domainItems, moduleItems] = await Promise.all([
+          listDomains(true),
+          listModules(true),
+        ]);
+        setDomains(domainItems);
         setModules(moduleItems);
-        setModuleDrafts(
+        setDomainDrafts(
           Object.fromEntries(
-            moduleItems.map((item) => [
+            domainItems.map((item) => [
               item.id,
               {
                 name: item.name,
@@ -97,6 +119,24 @@ export default function AdminPage() {
             ]),
           ),
         );
+        setModuleDrafts(
+          Object.fromEntries(
+            moduleItems.map((item) => [
+              item.id,
+              {
+                domainId: item.domainId,
+                name: item.name,
+                description: item.description,
+                sortOrder: item.sortOrder,
+                isActive: item.isActive,
+              },
+            ]),
+          ),
+        );
+        setNewModule((currentDraft) => ({
+          ...currentDraft,
+          domainId: currentDraft.domainId || domainItems[0]?.id || 0,
+        }));
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -144,6 +184,7 @@ export default function AdminPage() {
     await act("create-module", async () => {
       await createModule(newModule);
       setNewModule({
+        domainId: domains[0]?.id || 0,
         slug: "",
         name: "",
         description: "",
@@ -151,6 +192,28 @@ export default function AdminPage() {
         isActive: true,
       });
     });
+  }
+
+  async function handleCreateDomain(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await act("create-domain", async () => {
+      await createDomain(newDomain);
+      setNewDomain({
+        slug: "",
+        name: "",
+        description: "",
+        sortOrder: 0,
+        isActive: true,
+      });
+    });
+  }
+
+  async function handleUpdateDomain(id: number) {
+    const draft = domainDrafts[id];
+    if (!draft) {
+      return;
+    }
+    await act(`domain-${id}`, () => updateDomain(id, draft));
   }
 
   async function handleUpdateModule(id: number) {
@@ -174,6 +237,11 @@ export default function AdminPage() {
           <TabButton active={activeTab === "reviews"} onClick={() => setActiveTab("reviews")}>
             文章审核
           </TabButton>
+          {isAdmin && (
+            <TabButton active={activeTab === "domains"} onClick={() => setActiveTab("domains")}>
+              领域管理
+            </TabButton>
+          )}
           {isAdmin && (
             <TabButton active={activeTab === "modules"} onClick={() => setActiveTab("modules")}>
               版块管理
@@ -207,8 +275,22 @@ export default function AdminPage() {
           />
         )}
 
+        {!loading && isAdmin && activeTab === "domains" && (
+          <DomainPanel
+            domains={domains}
+            drafts={domainDrafts}
+            newDomain={newDomain}
+            actingKey={actingKey}
+            setDrafts={setDomainDrafts}
+            setNewDomain={setNewDomain}
+            onCreate={handleCreateDomain}
+            onUpdate={handleUpdateDomain}
+          />
+        )}
+
         {!loading && isAdmin && activeTab === "modules" && (
           <ModulePanel
+            domains={domains}
             modules={modules}
             drafts={moduleDrafts}
             newModule={newModule}
@@ -316,7 +398,156 @@ function ReviewPanel({
   );
 }
 
+function DomainPanel({
+  domains,
+  drafts,
+  newDomain,
+  actingKey,
+  setDrafts,
+  setNewDomain,
+  onCreate,
+  onUpdate,
+}: {
+  domains: DomainSummary[];
+  drafts: Record<number, Pick<DomainSummary, "name" | "description" | "sortOrder" | "isActive">>;
+  newDomain: {
+    slug: string;
+    name: string;
+    description: string;
+    sortOrder: number;
+    isActive: boolean;
+  };
+  actingKey: string;
+  setDrafts: React.Dispatch<
+    React.SetStateAction<Record<number, Pick<DomainSummary, "name" | "description" | "sortOrder" | "isActive">>>
+  >;
+  setNewDomain: React.Dispatch<React.SetStateAction<typeof newDomain>>;
+  onCreate: (event: FormEvent<HTMLFormElement>) => void;
+  onUpdate: (id: number) => void;
+}) {
+  return (
+    <div className="grid gap-5">
+      <form onSubmit={onCreate} className="rounded-lg border border-stone-200 bg-white p-5 shadow-soft">
+        <h2 className="text-lg font-semibold text-ink">新建领域</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <input
+            value={newDomain.slug}
+            onChange={(event) => setNewDomain((current) => ({ ...current, slug: event.target.value }))}
+            placeholder="slug，例如 backend"
+            required
+            className="h-10 rounded-md border border-stone-300 px-3 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+          />
+          <input
+            value={newDomain.name}
+            onChange={(event) => setNewDomain((current) => ({ ...current, name: event.target.value }))}
+            placeholder="领域名称"
+            required
+            className="h-10 rounded-md border border-stone-300 px-3 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+          />
+          <input
+            type="number"
+            value={newDomain.sortOrder}
+            onChange={(event) => setNewDomain((current) => ({ ...current, sortOrder: Number(event.target.value) }))}
+            className="h-10 rounded-md border border-stone-300 px-3 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+          />
+          <label className="flex h-10 items-center gap-2 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              checked={newDomain.isActive}
+              onChange={(event) => setNewDomain((current) => ({ ...current, isActive: event.target.checked }))}
+            />
+            启用
+          </label>
+        </div>
+        <textarea
+          value={newDomain.description}
+          onChange={(event) => setNewDomain((current) => ({ ...current, description: event.target.value }))}
+          placeholder="领域描述"
+          rows={3}
+          className="mt-3 w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+        />
+        <ActionButton disabled={actingKey === "create-domain"} className="mt-4">
+          新建领域
+        </ActionButton>
+      </form>
+
+      <div className="grid gap-3">
+        {domains.map((domain) => {
+          const draft = drafts[domain.id] ?? domain;
+          return (
+            <div key={domain.id} className="rounded-lg border border-stone-200 bg-white p-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-stone-500">{domain.slug}</p>
+                  <h3 className="font-semibold text-ink">{domain.name}</h3>
+                </div>
+                <span className="rounded-md bg-stone-100 px-2 py-1 text-xs text-stone-700">
+                  {draft.isActive ? "启用" : "停用"}
+                </span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <input
+                  value={draft.name}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [domain.id]: { ...draft, name: event.target.value },
+                    }))
+                  }
+                  className="h-10 rounded-md border border-stone-300 px-3 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+                />
+                <input
+                  type="number"
+                  value={draft.sortOrder}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [domain.id]: { ...draft, sortOrder: Number(event.target.value) },
+                    }))
+                  }
+                  className="h-10 rounded-md border border-stone-300 px-3 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+                />
+              </div>
+              <textarea
+                value={draft.description}
+                onChange={(event) =>
+                  setDrafts((current) => ({
+                    ...current,
+                    [domain.id]: { ...draft, description: event.target.value },
+                  }))
+                }
+                rows={3}
+                className="mt-3 w-full rounded-md border border-stone-300 px-3 py-2 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+              />
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-stone-700">
+                  <input
+                    type="checkbox"
+                    checked={draft.isActive}
+                    onChange={(event) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [domain.id]: { ...draft, isActive: event.target.checked },
+                      }))
+                    }
+                  />
+                  启用
+                </label>
+                <ActionButton disabled={actingKey === `domain-${domain.id}`} onClick={() => onUpdate(domain.id)}>
+                  保存领域
+                </ActionButton>
+              </div>
+            </div>
+          );
+        })}
+        {domains.length === 0 && <EmptyState text="暂无领域" />}
+      </div>
+    </div>
+  );
+}
+
 function ModulePanel({
+  domains,
   modules,
   drafts,
   newModule,
@@ -326,9 +557,11 @@ function ModulePanel({
   onCreate,
   onUpdate,
 }: {
+  domains: DomainSummary[];
   modules: ModuleSummary[];
-  drafts: Record<number, Pick<ModuleSummary, "name" | "description" | "sortOrder" | "isActive">>;
+  drafts: Record<number, Pick<ModuleSummary, "domainId" | "name" | "description" | "sortOrder" | "isActive">>;
   newModule: {
+    domainId: number;
     slug: string;
     name: string;
     description: string;
@@ -337,7 +570,7 @@ function ModulePanel({
   };
   actingKey: string;
   setDrafts: React.Dispatch<
-    React.SetStateAction<Record<number, Pick<ModuleSummary, "name" | "description" | "sortOrder" | "isActive">>>
+    React.SetStateAction<Record<number, Pick<ModuleSummary, "domainId" | "name" | "description" | "sortOrder" | "isActive">>>
   >;
   setNewModule: React.Dispatch<React.SetStateAction<typeof newModule>>;
   onCreate: (event: FormEvent<HTMLFormElement>) => void;
@@ -348,6 +581,21 @@ function ModulePanel({
       <form onSubmit={onCreate} className="rounded-lg border border-stone-200 bg-white p-5 shadow-soft">
         <h2 className="text-lg font-semibold text-ink">新建版块</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <select
+            value={newModule.domainId}
+            onChange={(event) => setNewModule((current) => ({ ...current, domainId: Number(event.target.value) }))}
+            required
+            className="h-10 rounded-md border border-stone-300 bg-white px-3 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+          >
+            <option value={0} disabled>
+              选择领域
+            </option>
+            {domains.map((domain) => (
+              <option key={domain.id} value={domain.id}>
+                {domain.name}
+              </option>
+            ))}
+          </select>
           <input
             value={newModule.slug}
             onChange={(event) => setNewModule((current) => ({ ...current, slug: event.target.value }))}
@@ -398,12 +646,29 @@ function ModulePanel({
                 <div>
                   <p className="text-xs text-stone-500">{module.slug}</p>
                   <h3 className="font-semibold text-ink">{module.name}</h3>
+                  <p className="mt-1 text-xs text-stone-500">{module.domainName}</p>
                 </div>
                 <span className="rounded-md bg-stone-100 px-2 py-1 text-xs text-stone-700">
                   {draft.isActive ? "启用" : "停用"}
                 </span>
               </div>
               <div className="grid gap-3 md:grid-cols-2">
+                <select
+                  value={draft.domainId}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [module.id]: { ...draft, domainId: Number(event.target.value) },
+                    }))
+                  }
+                  className="h-10 rounded-md border border-stone-300 bg-white px-3 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
+                >
+                  {domains.map((domain) => (
+                    <option key={domain.id} value={domain.id}>
+                      {domain.name}
+                    </option>
+                  ))}
+                </select>
                 <input
                   value={draft.name}
                   onChange={(event) =>

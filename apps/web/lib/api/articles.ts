@@ -13,8 +13,21 @@ export type ArticleSummary = {
   status: "draft" | "pending_review" | "published" | "rejected" | "archived";
   reviewNote?: string;
   publishedAt: string | null;
+  revisionOfArticleId?: number;
+  wordCount: number;
+  readingMinutes: number;
+  viewCount: number;
+  revisionCount: number;
+  tags: ArticleTag[] | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ArticleTag = {
+  id: number;
+  name: string;
+  slug: string;
+  usageCount: number;
 };
 
 export type ArticlePageMeta = {
@@ -23,10 +36,30 @@ export type ArticlePageMeta = {
   total: number;
 };
 
-export async function listArticles(moduleSlug?: string) {
+export type ArticleListParams = {
+  moduleSlug?: string;
+  q?: string;
+  tag?: string;
+  sort?: "latest" | "hot" | "random";
+  pageSize?: number;
+};
+
+export async function listArticles(input: ArticleListParams = {}) {
   const params = new URLSearchParams();
-  if (moduleSlug) {
-    params.set("moduleSlug", moduleSlug);
+  if (input.moduleSlug) {
+    params.set("moduleSlug", input.moduleSlug);
+  }
+  if (input.q) {
+    params.set("q", input.q);
+  }
+  if (input.tag) {
+    params.set("tag", input.tag);
+  }
+  if (input.sort) {
+    params.set("sort", input.sort);
+  }
+  if (input.pageSize) {
+    params.set("pageSize", String(input.pageSize));
   }
   const query = params.toString();
   return apiRequest<ArticleSummary[]>(`/articles${query ? `?${query}` : ""}`);
@@ -41,6 +74,8 @@ export function createArticle(input: {
   title: string;
   summary: string;
   contentMd: string;
+  status?: "draft" | "pending_review";
+  tags?: string[];
 }) {
   return apiRequest<{ id: number; status: ArticleSummary["status"] }>("/articles", {
     method: "POST",
@@ -67,6 +102,8 @@ export function updateMyArticle(
     title: string;
     summary: string;
     contentMd: string;
+    status?: "draft" | "pending_review";
+    tags?: string[];
   },
 ) {
   return apiRequest<ArticleSummary>(`/articles/${id}`, {

@@ -1,25 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { TagEditor } from "@/components/content/TagEditor";
 import { SiteHeader } from "@/components/layout/SiteHeader";
-import { createArticle } from "@/lib/api/articles";
+import { createArticle, type ArticleSummary } from "@/lib/api/articles";
 import { getCurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { listModules, type ModuleSummary } from "@/lib/api/modules";
 import { uploadArticleImage } from "@/lib/api/uploads";
 
-export default function SubmitPage() {
+type SubmitStatus = Extract<ArticleSummary["status"], "draft" | "pending_review">;
+
+export default function MeSubmitPage() {
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [moduleId, setModuleId] = useState("");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [contentMd, setContentMd] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingStatus, setSubmittingStatus] = useState<SubmitStatus | null>(
+    null,
+  );
   const [uploadingImage, setUploadingImage] = useState(false);
   const [error, setError] = useState("");
-  const [createdId, setCreatedId] = useState<number | null>(null);
+  const [created, setCreated] = useState<{
+    id: number;
+    status: ArticleSummary["status"];
+  } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -37,7 +46,7 @@ export default function SubmitPage() {
           window.location.href = "/login";
           return;
         }
-        setError("投稿页加载失败，请稍后重试");
+        setError("投稿页面加载失败，请稍后重试");
       } finally {
         setLoading(false);
       }
@@ -46,23 +55,38 @@ export default function SubmitPage() {
     load();
   }, []);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
+  async function submitArticle(status: SubmitStatus) {
     setError("");
-    setCreatedId(null);
+    setCreated(null);
 
+    if (!moduleId) {
+      setError("请选择投稿版块");
+      return;
+    }
+    if (!title.trim()) {
+      setError("请填写标题");
+      return;
+    }
+    if (status === "pending_review" && !contentMd.trim()) {
+      setError("提交审核前请填写正文");
+      return;
+    }
+
+    setSubmittingStatus(status);
     try {
-      const created = await createArticle({
+      const article = await createArticle({
         moduleId: Number(moduleId),
         title,
         summary,
         contentMd,
+        status,
+        tags,
       });
-      setCreatedId(created.id);
+      setCreated(article);
       setTitle("");
       setSummary("");
       setContentMd("");
+      setTags([]);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -70,7 +94,7 @@ export default function SubmitPage() {
         setError("投稿失败，请稍后重试");
       }
     } finally {
-      setSubmitting(false);
+      setSubmittingStatus(null);
     }
   }
 
@@ -123,15 +147,19 @@ export default function SubmitPage() {
     });
   }
 
+  const isSubmitting = submittingStatus !== null;
+
   return (
     <main className="min-h-screen bg-paper">
       <SiteHeader />
       <section className="mx-auto max-w-4xl px-4 py-10 md:py-14">
         <div className="mb-8">
           <p className="text-sm font-medium text-brass">投稿</p>
-          <h1 className="mt-2 text-3xl font-semibold text-ink">提交技术文章</h1>
+          <h1 className="mt-2 text-3xl font-semibold text-ink">
+            提交技术文章
+          </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600">
-            投稿后会进入待审核状态，审核通过后才会公开展示。
+            可以先保存草稿，也可以直接提交审核。审核通过后文章会公开展示。
           </p>
         </div>
 
@@ -142,10 +170,7 @@ export default function SubmitPage() {
         )}
 
         {!loading && (
-          <form
-            onSubmit={handleSubmit}
-            className="rounded-lg border border-stone-200 bg-white p-6 shadow-soft"
-          >
+          <div className="rounded-lg border border-stone-200 bg-white p-6 shadow-soft">
             {modules.length === 0 ? (
               <div className="rounded-md border border-dashed border-stone-300 px-4 py-6 text-sm text-stone-500">
                 暂无可投稿版块
@@ -177,7 +202,6 @@ export default function SubmitPage() {
                     value={title}
                     onChange={(event) => setTitle(event.target.value)}
                     maxLength={160}
-                    required
                     className="h-11 w-full rounded-md border border-stone-300 bg-white px-3 outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
                   />
                 </label>
@@ -194,6 +218,13 @@ export default function SubmitPage() {
                     className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
                   />
                 </label>
+
+                <div className="mb-4">
+                  <span className="mb-2 block text-sm font-medium text-stone-700">
+                    Tags
+                  </span>
+                  <TagEditor tags={tags} onChange={setTags} />
+                </div>
 
                 <div className="mb-5">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-3 text-sm font-medium text-stone-700">
@@ -219,7 +250,6 @@ export default function SubmitPage() {
                     ref={textareaRef}
                     value={contentMd}
                     onChange={(event) => setContentMd(event.target.value)}
-                    required
                     rows={12}
                     className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
                   />
@@ -231,28 +261,45 @@ export default function SubmitPage() {
                   </div>
                 )}
 
-                {createdId && (
+                {created && (
                   <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-                    投稿已提交，当前状态为待审核。
+                    {created.status === "draft"
+                      ? "草稿已保存。"
+                      : "投稿已提交，当前状态为待审核。"}
                     <Link
-                      href="/me/articles"
+                      href={
+                        created.status === "draft" ? "/me/drafts" : "/me/articles"
+                      }
                       className="ml-1 font-medium underline-offset-4 hover:underline"
                     >
-                      查看我的投稿
+                      {created.status === "draft" ? "查看草稿" : "查看我的投稿"}
                     </Link>
                   </div>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="h-11 rounded-md bg-moss px-5 font-medium text-white hover:bg-[#354f42] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitting ? "提交中..." : "提交投稿"}
-                </button>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => submitArticle("pending_review")}
+                    className="h-11 rounded-md bg-moss px-5 font-medium text-white hover:bg-[#354f42] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {submittingStatus === "pending_review"
+                      ? "提交中..."
+                      : "提交审核"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => submitArticle("draft")}
+                    className="h-11 rounded-md border border-stone-300 bg-white px-5 font-medium text-stone-700 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {submittingStatus === "draft" ? "保存中..." : "保存草稿"}
+                  </button>
+                </div>
               </>
             )}
-          </form>
+          </div>
         )}
       </section>
     </main>

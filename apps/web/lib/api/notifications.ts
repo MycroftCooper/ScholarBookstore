@@ -5,7 +5,7 @@ export type NotificationItem = {
   recipientId: number;
   actorId: number;
   actorUsername: string;
-  type: "comment_reply" | "article_comment";
+  type: "comment_reply" | "article_comment" | "article_bookmark" | "followee_article";
   articleId: number | null;
   articleTitle: string | null;
   commentId: number | null;

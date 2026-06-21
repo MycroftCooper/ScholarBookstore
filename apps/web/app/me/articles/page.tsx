@@ -14,13 +14,28 @@ const statusLabel: Record<ArticleSummary["status"], string> = {
   archived: "已归档",
 };
 
+const statusFilters: Array<{
+  value: ArticleSummary["status"] | "";
+  label: string;
+}> = [
+  { value: "", label: "全部" },
+  { value: "draft", label: "草稿" },
+  { value: "pending_review", label: "待审核" },
+  { value: "published", label: "已发布" },
+  { value: "rejected", label: "已拒绝" },
+  { value: "archived", label: "已归档" },
+];
+
 export default function MyArticlesPage() {
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
+  const [status, setStatus] = useState<ArticleSummary["status"] | "">("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    listMyArticles()
+    setLoading(true);
+    setError("");
+    listMyArticles(status || undefined)
       .then(setArticles)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -30,7 +45,7 @@ export default function MyArticlesPage() {
         setError("我的投稿加载失败，请稍后重试");
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [status]);
 
   return (
     <main className="min-h-screen bg-paper">
@@ -41,12 +56,37 @@ export default function MyArticlesPage() {
             <p className="text-sm font-medium text-brass">个人中心</p>
             <h1 className="mt-2 text-3xl font-semibold text-ink">我的投稿</h1>
           </div>
-          <Link
-            href="/submit"
-            className="rounded-md bg-moss px-4 py-2 text-sm font-medium text-white hover:bg-[#354f42]"
-          >
-            新投稿
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/me/drafts"
+              className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 hover:border-moss hover:text-moss"
+            >
+              我的草稿
+            </Link>
+            <Link
+              href="/me/submit"
+              className="rounded-md bg-moss px-4 py-2 text-sm font-medium text-white hover:bg-[#354f42]"
+            >
+              新投稿
+            </Link>
+          </div>
+        </div>
+
+        <div className="mb-5 flex flex-wrap gap-2">
+          {statusFilters.map((item) => (
+            <button
+              key={item.value || "all"}
+              type="button"
+              onClick={() => setStatus(item.value)}
+              className={`h-9 rounded-md border px-3 text-sm font-medium ${
+                status === item.value
+                  ? "border-moss bg-moss text-white"
+                  : "border-stone-300 bg-white text-stone-700 hover:border-moss hover:text-moss"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
 
         {loading && (
@@ -92,13 +132,23 @@ export default function MyArticlesPage() {
                   {article.reviewNote}
                 </p>
               )}
-              {["draft", "pending_review", "rejected"].includes(article.status) && (
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-stone-500">
+                <span>{article.wordCount} 字</span>
+                <span>约 {article.readingMinutes} 分钟</span>
+                <span>{article.viewCount} 次浏览</span>
+                <span>{article.revisionCount} 次修订</span>
+              </div>
+              {["draft", "pending_review", "rejected", "published"].includes(article.status) && (
                 <div className="mt-4">
                   <Link
                     href={`/me/articles/${article.id}/edit`}
                     className="inline-flex h-9 items-center rounded-md border border-stone-300 px-3 text-sm font-medium text-stone-700 hover:border-moss hover:text-moss"
                   >
-                    {article.status === "rejected" ? "修改并重提" : "编辑投稿"}
+                    {article.status === "published"
+                      ? "发起修订"
+                      : article.status === "rejected"
+                        ? "修改并重提"
+                        : "编辑投稿"}
                   </Link>
                 </div>
               )}

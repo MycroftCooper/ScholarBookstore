@@ -20,13 +20,16 @@ func (r *fakeModuleRepo) FindBySlug(_ context.Context, slug string) (Module, err
 	if slug != "database" {
 		return Module{}, ErrNotFound
 	}
-	return Module{ID: 1, Slug: slug, Name: "数据库", IsActive: true}, nil
+	return Module{ID: 1, DomainID: 1, DomainSlug: "backend", DomainName: "后端开发", Slug: slug, Name: "数据库", IsActive: true}, nil
 }
 
 func (r *fakeModuleRepo) Create(_ context.Context, input CreateModuleInput) (Module, error) {
 	r.created = input
 	return Module{
 		ID:          1,
+		DomainID:    input.DomainID,
+		DomainSlug:  "backend",
+		DomainName:  "后端开发",
 		Slug:        input.Slug,
 		Name:        input.Name,
 		Description: input.Description,
@@ -44,7 +47,14 @@ func (r *fakeModuleRepo) Update(_ context.Context, id int64, input UpdateModuleI
 	if input.Name != nil {
 		name = *input.Name
 	}
-	return Module{ID: id, Slug: "database", Name: name, IsActive: true}, nil
+	return Module{ID: id, DomainID: 1, DomainSlug: "backend", DomainName: "后端开发", Slug: "database", Name: name, IsActive: true}, nil
+}
+
+func (r *fakeModuleRepo) FindByID(_ context.Context, id int64) (Module, error) {
+	if id != 1 {
+		return Module{}, ErrNotFound
+	}
+	return Module{ID: id, DomainID: 1, DomainSlug: "backend", DomainName: "后端开发", Slug: "database", Name: "数据库", IsActive: true}, nil
 }
 
 func TestCreateNormalizesAndValidatesInput(t *testing.T) {
@@ -52,6 +62,7 @@ func TestCreateNormalizesAndValidatesInput(t *testing.T) {
 	service := NewService(repo)
 
 	module, err := service.Create(context.Background(), CreateModuleInput{
+		DomainID:    1,
 		Slug:        " Database ",
 		Name:        " 数据库 ",
 		Description: " PostgreSQL 与存储 ",
@@ -70,6 +81,7 @@ func TestCreateNormalizesAndValidatesInput(t *testing.T) {
 func TestCreateRejectsInvalidSlug(t *testing.T) {
 	service := NewService(&fakeModuleRepo{})
 	_, err := service.Create(context.Background(), CreateModuleInput{
+		DomainID: 1,
 		Slug:     "bad slug",
 		Name:     "数据库",
 		IsActive: true,

@@ -40,6 +40,17 @@ func (r *Repository) CreateArticleComment(ctx context.Context, tx pgx.Tx, input 
 	return nil
 }
 
+func (r *Repository) CreateArticleBookmark(ctx context.Context, tx pgx.Tx, input CreateArticleBookmarkInput) error {
+	const query = `
+		insert into notifications (recipient_id, actor_id, type, article_id)
+		values ($1, $2, 'article_bookmark', $3)
+	`
+	if _, err := tx.Exec(ctx, query, input.RecipientID, input.ActorID, input.ArticleID); err != nil {
+		return fmt.Errorf("create article bookmark notification: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) ListMineWithPool(ctx context.Context, recipientID int64, unreadOnly bool, page int, pageSize int) ([]Notification, int64, error) {
 	return r.ListMine(ctx, r.db, recipientID, unreadOnly, page, pageSize)
 }

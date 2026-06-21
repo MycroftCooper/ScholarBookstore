@@ -102,9 +102,139 @@
 
 - `UNAUTHORIZED`
 
-## 3. 版块接口
+### 2.5 更新个人资料
 
-### 3.1 版块列表
+- Method：`PATCH`
+- Path：`/api/v1/me/profile`
+- 登录：是
+- 角色：user、reviewer、admin
+
+请求：
+
+```json
+{
+  "bio": "后端工程师，关注数据库与 Go",
+  "school": "示例大学",
+  "company": "示例公司"
+}
+```
+
+约束：
+
+- `bio` 最长 200 字。
+- `school`、`company` 最长 100 字。
+- 只能更新自己的资料。
+
+响应：返回当前用户基础信息与资料字段。
+
+错误：
+
+- `VALIDATION_ERROR`
+- `UNAUTHORIZED`
+
+### 2.6 上传头像
+
+- Method：`POST`
+- Path：`/api/v1/me/avatar`
+- 登录：是
+- 角色：user、reviewer、admin
+- Content-Type：`multipart/form-data`
+
+请求字段：
+
+- `file`：头像图片。
+
+约束：
+
+- 仅允许 jpeg/png/webp。
+- 最大 2MB。
+- 后端生成文件名并存储到本地 uploads。
+- 上传成功后更新当前用户 `avatarUrl`。
+
+响应：返回当前用户基础信息与资料字段。
+
+错误：
+
+- `VALIDATION_ERROR`
+- `UNAUTHORIZED`
+- `PAYLOAD_TOO_LARGE`
+- `UNSUPPORTED_MEDIA_TYPE`
+
+## 3. 领域接口
+
+### 3.1 领域列表
+
+- Method：`GET`
+- Path：`/api/v1/domains`
+- 登录：否
+- 角色：guest、user、reviewer、admin
+
+查询参数：
+
+- `includeInactive`：仅 admin 可用，默认 `false`。
+
+响应：领域列表。
+
+错误：
+
+- `FORBIDDEN`
+
+### 3.2 领域详情
+
+- Method：`GET`
+- Path：`/api/v1/domains/{id}`
+- 登录：否
+- 角色：guest、user、reviewer、admin
+
+响应：领域详情，包含该领域下启用版块列表。
+
+错误：
+
+- `NOT_FOUND`
+
+### 3.3 创建领域
+
+- Method：`POST`
+- Path：`/api/v1/admin/domains`
+- 登录：是
+- 角色：admin
+
+请求：
+
+```json
+{
+  "slug": "backend",
+  "name": "后端开发",
+  "description": "后端开发知识领域",
+  "sortOrder": 0,
+  "isActive": true
+}
+```
+
+错误：
+
+- `VALIDATION_ERROR`
+- `CONFLICT`
+- `FORBIDDEN`
+
+### 3.4 更新领域
+
+- Method：`PATCH`
+- Path：`/api/v1/admin/domains/{id}`
+- 登录：是
+- 角色：admin
+
+请求：允许更新 `name`、`description`、`sortOrder`、`isActive`。
+
+错误：
+
+- `VALIDATION_ERROR`
+- `NOT_FOUND`
+- `FORBIDDEN`
+
+## 4. 版块接口
+
+### 4.1 版块列表
 
 - Method：`GET`
 - Path：`/api/v1/modules`
@@ -121,7 +251,7 @@
 
 - `FORBIDDEN`
 
-### 3.2 版块详情
+### 4.2 版块详情
 
 - Method：`GET`
 - Path：`/api/v1/modules/{slug}`
@@ -134,7 +264,7 @@
 
 - `NOT_FOUND`
 
-### 3.3 创建版块
+### 4.3 创建版块
 
 - Method：`POST`
 - Path：`/api/v1/admin/modules`
@@ -145,6 +275,7 @@
 
 ```json
 {
+  "domainId": 1,
   "slug": "database",
   "name": "数据库",
   "description": "数据库知识版块",
@@ -159,14 +290,14 @@
 - `CONFLICT`
 - `FORBIDDEN`
 
-### 3.4 更新版块
+### 4.4 更新版块
 
 - Method：`PATCH`
 - Path：`/api/v1/admin/modules/{id}`
 - 登录：是
 - 角色：admin
 
-请求：允许更新 `name`、`description`、`sortOrder`、`isActive`。
+请求：允许更新 `domainId`、`name`、`description`、`sortOrder`、`isActive`。
 
 错误：
 
@@ -174,9 +305,9 @@
 - `NOT_FOUND`
 - `FORBIDDEN`
 
-## 4. 文章接口
+## 5. 文章接口
 
-### 4.1 文章列表
+### 5.1 文章列表
 
 - Method：`GET`
 - Path：`/api/v1/articles`
@@ -186,29 +317,47 @@
 查询参数：
 
 - `moduleSlug`
+- `q`：可选，按标题、摘要、正文模糊搜索已发布文章。
+- `tag`：可选，按 Tag slug 筛选已发布文章。
+- `sort`：可选，`latest`、`hot`、`random`，默认 `latest`。
 - `page`
 - `pageSize`
 
-响应：仅返回 `published` 且未删除文章。
+响应：仅返回 `published` 且未删除文章。`hot` 按浏览量和发布时间衰减排序，`random` 返回随机文章。
 
 错误：
 
 - `VALIDATION_ERROR`
 
-### 4.2 文章详情
+### 5.2 文章详情
 
 - Method：`GET`
 - Path：`/api/v1/articles/{id}`
 - 登录：否
 - 角色：guest、user、reviewer、admin
 
-响应：已发布文章详情。
+响应：已发布文章详情。读取成功后后端会递增 `viewCount`。
+
+响应文章对象包含 `tags`：
+
+```json
+{
+  "tags": [
+    {
+      "id": 1,
+      "name": "PostgreSQL",
+      "slug": "postgresql",
+      "usageCount": 12
+    }
+  ]
+}
+```
 
 错误：
 
 - `NOT_FOUND`：文章不存在、未发布或已删除。
 
-### 4.3 创建投稿
+### 5.3 创建投稿
 
 - Method：`POST`
 - Path：`/api/v1/articles`
@@ -222,9 +371,19 @@
   "moduleId": 1,
   "title": "PostgreSQL 索引入门",
   "summary": "介绍常见索引类型",
-  "contentMd": "## 正文"
+  "contentMd": "## 正文",
+  "status": "pending_review",
+  "tags": ["PostgreSQL", "数据库"]
 }
 ```
+
+约束：
+
+- `status` 可选，允许 `draft` 或 `pending_review`。
+- 未传 `status` 时默认 `pending_review`。
+- `draft` 允许正文为空；`pending_review` 必须有正文。
+- 后端根据 `contentMd` 写入 `wordCount` 和 `readingMinutes`。
+- `tags` 可选，最多 9 个，每个最长 30 字；后端自由创建并按 slug 去重。
 
 响应：
 
@@ -244,7 +403,7 @@
 - `UNAUTHORIZED`
 - `FORBIDDEN`
 
-### 4.4 我的投稿
+### 5.4 我的投稿
 
 - Method：`GET`
 - Path：`/api/v1/me/articles`
@@ -253,7 +412,7 @@
 
 查询参数：
 
-- `status`
+- `status`：可选，允许 `draft`、`pending_review`、`published`、`rejected`、`archived`。
 - `page`
 - `pageSize`
 
@@ -264,7 +423,7 @@
 - `UNAUTHORIZED`
 - `VALIDATION_ERROR`
 
-### 4.5 我的单篇投稿
+### 5.5 我的单篇投稿
 
 - Method：`GET`
 - Path：`/api/v1/me/articles/{id}`
@@ -278,31 +437,46 @@
 - `UNAUTHORIZED`
 - `NOT_FOUND`
 
-### 4.6 更新自己的未发布文章
+### 5.6 更新自己的投稿或发起修订
 
 - Method：`PATCH`
 - Path：`/api/v1/articles/{id}`
 - 登录：是
 - 角色：user、reviewer、admin
 
-请求：允许更新 `title`、`summary`、`contentMd`。
+请求：允许更新 `title`、`summary`、`contentMd`、`status`、`tags`。
+
+```json
+{
+  "title": "PostgreSQL 索引入门",
+  "summary": "介绍常见索引类型",
+  "contentMd": "## 正文",
+  "status": "pending_review",
+  "tags": ["PostgreSQL", "数据库"]
+}
+```
 
 约束：
 
 - 仅作者可更新。
 - 允许更新 `draft`、`pending_review`、`rejected`。
+- 当目标文章为 `published` 且 `status = "pending_review"` 时，创建一条修订稿；原文保持公开。
+- `status` 可选，允许 `draft` 或 `pending_review`。
+- `draft` 可保存为空正文；`pending_review` 必须有正文。
 - `rejected` 文章更新后重新进入 `pending_review`，并清空旧审核说明。
-- 已发布文章是否允许编辑为 TODO，默认不允许直接编辑。
+- 更新正文时后端重新计算 `wordCount` 和 `readingMinutes`。
+- 更新 `tags` 时替换整组文章标签；最多 9 个，每个最长 30 字。
+- 同一篇已发布原文同时只允许存在一条未完成修订稿。
 
 错误：
 
 - `FORBIDDEN`
 - `NOT_FOUND`
-- `CONFLICT`
+- `CONFLICT`：当前状态不允许编辑，或该原文已存在未完成修订稿。
 
-## 5. 审核接口
+## 6. 审核接口
 
-### 5.0 后台文章列表
+### 6.0 后台文章列表
 
 - Method：`GET`
 - Path：`/api/v1/admin/articles`
@@ -322,7 +496,7 @@
 - `VALIDATION_ERROR`
 - `FORBIDDEN`
 
-### 5.1 待审核文章列表
+### 6.1 待审核文章列表
 
 - Method：`GET`
 - Path：`/api/v1/admin/articles/reviews`
@@ -335,7 +509,7 @@
 
 - `FORBIDDEN`
 
-### 5.2 审核通过
+### 6.2 审核通过
 
 - Method：`POST`
 - Path：`/api/v1/admin/articles/{id}/approve`
@@ -350,13 +524,18 @@
 }
 ```
 
+约束：
+
+- 普通投稿审核通过后变为 `published` 并设置 `publishedAt`。
+- 修订稿审核通过后，用修订稿内容替换原文，原文 `revisionCount + 1`，修订稿软删除。
+
 错误：
 
 - `NOT_FOUND`
 - `CONFLICT`
 - `FORBIDDEN`
 
-### 5.3 审核拒绝
+### 6.3 审核拒绝
 
 - Method：`POST`
 - Path：`/api/v1/admin/articles/{id}/reject`
@@ -371,7 +550,7 @@
 }
 ```
 
-### 5.4 隐藏已发布文章
+### 6.4 隐藏已发布文章
 
 - Method：`POST`
 - Path：`/api/v1/admin/articles/{id}/archive`
@@ -389,7 +568,7 @@
 - `CONFLICT`
 - `FORBIDDEN`
 
-### 5.5 恢复隐藏文章
+### 6.5 恢复隐藏文章
 
 - Method：`POST`
 - Path：`/api/v1/admin/articles/{id}/restore`
@@ -413,27 +592,30 @@
 - `CONFLICT`
 - `FORBIDDEN`
 
-## 6. 评论接口
+## 7. 评论接口
 
-### 6.1 评论列表
+### 7.1 评论列表
 
 - Method：`GET`
 - Path：`/api/v1/articles/{id}/comments`
-- 登录：否
-- 角色：guest、user、reviewer、admin
+- 登录：是
+- 角色：user、reviewer、admin
 
 查询参数：
 
+- `sort`：可选，`latest` 或 `hot`，默认 `latest`。
 - `page`
 - `pageSize`
 
-响应：文章下可见评论。当前返回扁平列表并带 `parentId`，前端按顶级评论和回复展示。
+响应：文章下可见评论。当前返回扁平列表并带 `parentId`，前端按顶级评论和回复展示。评论对象包含 `upVotes`、`downVotes`、`score`、`myVote`。
 
 错误：
 
+- `UNAUTHORIZED`
+- `VALIDATION_ERROR`
 - `NOT_FOUND`
 
-### 6.2 创建顶级评论
+### 7.2 创建顶级评论
 
 - Method：`POST`
 - Path：`/api/v1/articles/{id}/comments`
@@ -460,7 +642,7 @@
 - 评论他人文章时，后端创建 `article_comment` 通知给文章作者。
 - 评论自己的文章时，不创建通知。
 
-### 6.3 回复评论
+### 7.3 回复评论
 
 - Method：`POST`
 - Path：`/api/v1/comments/{id}/replies`
@@ -491,7 +673,7 @@
 - `NOT_FOUND`
 - `CONFLICT`
 
-### 6.4 删除评论或回复
+### 7.4 删除评论或回复
 
 - Method：`DELETE`
 - Path：`/api/v1/comments/{id}`
@@ -503,12 +685,43 @@
 - 普通用户只能删除自己的评论或回复。
 - reviewer、admin 可删除任意评论或回复。
 
+### 7.5 评论赞踩
+
+- Method：`PUT`
+- Path：`/api/v1/comments/{id}/vote`
+- 登录：是
+- 角色：user、reviewer、admin
+
+请求：
+
+```json
+{
+  "value": 1
+}
+```
+
+约束：
+
+- `value = 1` 表示赞。
+- `value = -1` 表示踩。
+- `value = 0` 表示取消当前赞/踩。
+- 只能对可见、未删除且所属文章已发布的评论赞踩。
+- 同一用户对同一评论最多保留一条赞踩记录，切换时覆盖旧值。
+
+响应：更新后的评论对象，包含赞踩统计与当前用户 `myVote`。
+
+错误：
+
+- `VALIDATION_ERROR`
+- `UNAUTHORIZED`
+- `NOT_FOUND`
+
 错误：
 
 - `FORBIDDEN`
 - `NOT_FOUND`
 
-### 6.5 我的评论
+### 7.5 我的评论
 
 - Method：`GET`
 - Path：`/api/v1/me/comments`
@@ -522,7 +735,7 @@
 
 响应：当前用户发表过的评论和回复。
 
-### 6.6 后台评论列表
+### 7.6 后台评论列表
 
 - Method：`GET`
 - Path：`/api/v1/admin/comments`
@@ -535,7 +748,7 @@
 
 - `FORBIDDEN`
 
-### 6.7 隐藏评论
+### 7.7 隐藏评论
 
 - Method：`POST`
 - Path：`/api/v1/admin/comments/{id}/hide`
@@ -549,7 +762,7 @@
 - `NOT_FOUND`
 - `FORBIDDEN`
 
-### 6.8 恢复评论
+### 7.8 恢复评论
 
 - Method：`POST`
 - Path：`/api/v1/admin/comments/{id}/show`
@@ -567,9 +780,211 @@
 
 - `UNAUTHORIZED`
 
-## 7. 通知接口
+## 8. 收藏接口
 
-### 7.1 我的通知
+### 8.1 收藏状态
+
+- Method：`GET`
+- Path：`/api/v1/articles/{id}/bookmark`
+- 登录：是
+- 角色：user、reviewer、admin
+
+响应：当前用户是否已收藏该文章，以及文章收藏总数。
+
+错误：
+
+- `UNAUTHORIZED`
+- `NOT_FOUND`
+
+### 8.2 收藏文章
+
+- Method：`POST`
+- Path：`/api/v1/articles/{id}/bookmark`
+- 登录：是
+- 角色：user、reviewer、admin
+
+请求：
+
+```json
+{
+  "collectionId": 1
+}
+```
+
+约束：
+
+- `collectionId` 可选；为空时后端使用或自动创建默认收藏夹。
+- 只能收藏已发布且未删除文章。
+- 只能收藏到自己的收藏夹。
+- 收藏他人文章时创建 `article_bookmark` 通知。
+
+响应：收藏状态。
+
+### 8.3 取消收藏
+
+- Method：`DELETE`
+- Path：`/api/v1/articles/{id}/bookmark`
+- 登录：是
+- 角色：user、reviewer、admin
+
+响应：收藏状态。
+
+### 8.4 收藏夹列表
+
+- Method：`GET`
+- Path：`/api/v1/me/bookmark-collections`
+- 登录：是
+- 角色：user、reviewer、admin
+
+响应：当前用户收藏夹列表。首次调用时后端会自动创建默认收藏夹。
+
+### 8.5 创建收藏夹
+
+- Method：`POST`
+- Path：`/api/v1/me/bookmark-collections`
+- 登录：是
+- 角色：user、reviewer、admin
+
+请求：
+
+```json
+{
+  "name": "数据库"
+}
+```
+
+错误：
+
+- `VALIDATION_ERROR`
+- `CONFLICT`
+
+### 8.6 我的收藏
+
+- Method：`GET`
+- Path：`/api/v1/me/bookmarks`
+- 登录：是
+- 角色：user、reviewer、admin
+
+查询参数：
+
+- `collectionId`：可选，按收藏夹筛选。
+- `page`
+- `pageSize`
+
+响应：当前用户收藏的已发布文章列表。
+
+## 9. 用户与关注接口
+
+### 9.1 作者公开信息
+
+- Method：`GET`
+- Path：`/api/v1/users/{username}`
+- 登录：否
+- 角色：guest、user、reviewer、admin
+
+响应：作者公开信息（头像、用户名、bio、学校、公司、已发布文章数、关注者数、正在关注数），以及已发布文章列表（分页）。
+
+查询参数：
+
+- `page`
+- `pageSize`
+
+错误：
+
+- `NOT_FOUND`：用户不存在。
+
+### 9.2 关注状态
+
+- Method：`GET`
+- Path：`/api/v1/users/{username}/follow`
+- 登录：是
+- 角色：user、reviewer、admin
+
+响应：当前用户是否关注目标用户，以及目标用户关注数。
+
+### 9.3 关注用户
+
+- Method：`POST`
+- Path：`/api/v1/users/{username}/follow`
+- 登录：是
+- 角色：user、reviewer、admin
+
+约束：
+
+- 不能关注自己。
+- 不能关注不存在或禁用用户。
+- 重复关注幂等。
+
+### 9.4 取关用户
+
+- Method：`DELETE`
+- Path：`/api/v1/users/{username}/follow`
+- 登录：是
+- 角色：user、reviewer、admin
+
+### 9.5 我关注的用户
+
+- Method：`GET`
+- Path：`/api/v1/me/following`
+- 登录：是
+- 角色：user、reviewer、admin
+
+### 9.6 关注我的用户
+
+- Method：`GET`
+- Path：`/api/v1/me/followers`
+- 登录：是
+- 角色：user、reviewer、admin
+
+## 10. 举报接口
+
+### 10.1 举报文章
+
+- Method：`POST`
+- Path：`/api/v1/articles/{id}/reports`
+- 登录：是
+- 角色：user、reviewer、admin
+
+请求：
+
+```json
+{
+  "reason": "疑似违规"
+}
+```
+
+约束：只能举报已发布文章；同一用户对同一文章只能有一个待处理举报。
+
+### 10.2 后台举报列表
+
+- Method：`GET`
+- Path：`/api/v1/admin/reports`
+- 登录：是
+- 角色：reviewer、admin
+
+查询参数：
+
+- `status`：可选，`pending`、`resolved`、`rejected`。
+
+### 10.3 处理举报
+
+- Method：`POST`
+- Path：`/api/v1/admin/reports/{id}/resolve`
+- 登录：是
+- 角色：reviewer、admin
+
+请求：
+
+```json
+{
+  "status": "resolved",
+  "note": "已处理"
+}
+```
+
+## 11. 通知接口
+
+### 11.1 我的通知
 
 - Method：`GET`
 - Path：`/api/v1/me/notifications`
@@ -595,7 +1010,7 @@
 
 - `UNAUTHORIZED`
 
-### 7.2 未读通知数量
+### 11.2 未读通知数量
 
 - Method：`GET`
 - Path：`/api/v1/me/notifications/unread-count`
@@ -613,7 +1028,7 @@
 }
 ```
 
-### 7.3 标记通知已读
+### 11.3 标记通知已读
 
 - Method：`POST`
 - Path：`/api/v1/me/notifications/{id}/read`
@@ -630,7 +1045,7 @@
 - `FORBIDDEN`
 - `NOT_FOUND`
 
-### 7.4 全部标记已读
+### 11.4 全部标记已读
 
 - Method：`POST`
 - Path：`/api/v1/me/notifications/read-all`
@@ -639,90 +1054,9 @@
 
 响应：更新数量。
 
-## 8. 用户与关注接口
+## 12. 上传接口
 
-### 8.1 作者公开信息
-
-- Method：`GET`
-- Path：`/api/v1/users/{username}`
-- 登录：否
-- 角色：guest、user、reviewer、admin
-
-响应：作者公开信息（头像、用户名、bio、学校、公司、已发布文章数、关注者数、正在关注数），以及已发布文章列表（分页）。
-
-查询参数：
-
-- `page`
-- `pageSize`
-
-错误：
-
-- `NOT_FOUND`：用户不存在。
-
-### 8.2 关注用户
-
-- Method：`POST`
-- Path：`/api/v1/me/following/{username}`
-- 登录：是
-- 角色：user、reviewer、admin
-
-约束：
-- 不能关注自己。
-- 不能重复关注（已关注时返回 `CONFLICT`）。
-- 目标用户必须存在且未被禁用。
-
-错误：
-
-- `UNAUTHORIZED`
-- `NOT_FOUND`
-- `CONFLICT`
-
-### 8.3 取关用户
-
-- Method：`DELETE`
-- Path：`/api/v1/me/following/{username}`
-- 登录：是
-- 角色：user、reviewer、admin
-
-约束：
-- 关注关系必须存在。
-
-错误：
-
-- `UNAUTHORIZED`
-- `NOT_FOUND`
-
-### 8.4 我关注的用户
-
-- Method：`GET`
-- Path：`/api/v1/me/following`
-- 登录：是
-- 角色：user、reviewer、admin
-
-查询参数：
-
-- `page`
-- `pageSize`
-
-响应：我关注的用户列表（用户头像、用户名、bio 摘要、关注时间），分页，按关注时间倒序。
-
-### 8.5 关注我的用户
-
-- Method：`GET`
-- Path：`/api/v1/me/followers`
-- 登录：是
-- 角色：user、reviewer、admin
-
-查询参数：
-
-- `page`
-- `pageSize`
-
-响应：关注我的用户列表（用户头像、用户名、bio 摘要、关注时间），分页，按关注时间倒序。
-
-## 9. 上传接口
-
-### 9.1 上传文章图片
+### 12.1 上传文章图片
 
 - Method：`POST`
 - Path：`/api/v1/uploads/article-images`
