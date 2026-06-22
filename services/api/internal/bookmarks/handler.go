@@ -1,14 +1,12 @@
 package bookmarks
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
-
 	"scholarbookstore/services/api/internal/auth"
+	httprequest "scholarbookstore/services/api/internal/http/request"
 	"scholarbookstore/services/api/internal/http/response"
 )
 
@@ -57,7 +55,7 @@ func (h *Handler) CreateCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req createCollectionRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := httprequest.DecodeJSON(r, &req); err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
 		return
 	}
@@ -83,13 +81,13 @@ func (h *Handler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	collectionID, idOK := parseIDParam(r, "id")
+	collectionID, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏夹不存在", nil)
 		return
 	}
 	var req updateCollectionRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := httprequest.DecodeJSON(r, &req); err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
 		return
 	}
@@ -119,7 +117,7 @@ func (h *Handler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	collectionID, idOK := parseIDParam(r, "id")
+	collectionID, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏夹不存在", nil)
 		return
@@ -146,7 +144,7 @@ func (h *Handler) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	page, pageSize, valid := parsePagination(r)
+	page, pageSize, valid := httprequest.Pagination(r)
 	if !valid {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
 		return
@@ -178,13 +176,13 @@ func (h *Handler) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	bookmarkID, idOK := parseIDParam(r, "id")
+	bookmarkID, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏不存在", nil)
 		return
 	}
 	var req moveBookmarkRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := httprequest.DecodeJSON(r, &req); err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
 		return
 	}
@@ -206,14 +204,14 @@ func (h *Handler) Add(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	articleID, idOK := parseIDParam(r, "id")
+	articleID, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
 		return
 	}
 	var req bookmarkArticleRequest
 	if r.Body != nil {
-		if err := decodeJSONAllowEmpty(r, &req); err != nil {
+		if err := httprequest.DecodeJSONAllowEmpty(r, &req); err != nil {
 			response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
 			return
 		}
@@ -240,7 +238,7 @@ func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	articleID, idOK := parseIDParam(r, "id")
+	articleID, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
 		return
@@ -263,7 +261,7 @@ func (h *Handler) State(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	articleID, idOK := parseIDParam(r, "id")
+	articleID, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
 		return
@@ -280,50 +278,10 @@ func (h *Handler) State(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, state, nil)
 }
 
-func parsePagination(r *http.Request) (int, int, bool) {
-	page := 1
-	pageSize := 20
-	var err error
-	if raw := r.URL.Query().Get("page"); raw != "" {
-		page, err = strconv.Atoi(raw)
-		if err != nil {
-			return 0, 0, false
-		}
-	}
-	if raw := r.URL.Query().Get("pageSize"); raw != "" {
-		pageSize, err = strconv.Atoi(raw)
-		if err != nil {
-			return 0, 0, false
-		}
-	}
-	if page < 1 || pageSize < 1 || pageSize > 100 {
-		return 0, 0, false
-	}
-	return page, pageSize, true
-}
-
-func parseIDParam(r *http.Request, name string) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, name), 10, 64)
-	return id, err == nil && id > 0
-}
-
 func pageMeta(page Page) map[string]interface{} {
 	return map[string]interface{}{
 		"page":     page.Number,
 		"pageSize": page.Size,
 		"total":    page.Total,
 	}
-}
-
-func decodeJSON(r *http.Request, dst interface{}) error {
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(dst)
-}
-
-func decodeJSONAllowEmpty(r *http.Request, dst interface{}) error {
-	if r.ContentLength == 0 {
-		return nil
-	}
-	return decodeJSON(r, dst)
 }

@@ -1,13 +1,10 @@
 package tags
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
-	"github.com/go-chi/chi/v5"
-
+	httprequest "scholarbookstore/services/api/internal/http/request"
 	"scholarbookstore/services/api/internal/http/response"
 )
 
@@ -29,7 +26,7 @@ func NewHandler(service *Service) *Handler {
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	page, pageSize, ok := parsePagination(r)
+	page, pageSize, ok := httprequest.Pagination(r)
 	if !ok {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
 		return
@@ -43,13 +40,13 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseIDParam(r, "id")
+	id, ok := httprequest.IDParam(r, "id")
 	if !ok {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Tag 不存在", nil)
 		return
 	}
 	var req updateRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := httprequest.DecodeJSON(r, &req); err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
 		return
 	}
@@ -74,7 +71,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseIDParam(r, "id")
+	id, ok := httprequest.IDParam(r, "id")
 	if !ok {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Tag 不存在", nil)
 		return
@@ -93,7 +90,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	var req mergeRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := httprequest.DecodeJSON(r, &req); err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
 		return
 	}
@@ -113,39 +110,6 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, item, nil)
 }
 
-func parsePagination(r *http.Request) (int, int, bool) {
-	page := 1
-	pageSize := 20
-	var err error
-	if raw := r.URL.Query().Get("page"); raw != "" {
-		page, err = strconv.Atoi(raw)
-		if err != nil {
-			return 0, 0, false
-		}
-	}
-	if raw := r.URL.Query().Get("pageSize"); raw != "" {
-		pageSize, err = strconv.Atoi(raw)
-		if err != nil {
-			return 0, 0, false
-		}
-	}
-	if page < 1 || pageSize < 1 || pageSize > 100 {
-		return 0, 0, false
-	}
-	return page, pageSize, true
-}
-
-func parseIDParam(r *http.Request, name string) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, name), 10, 64)
-	return id, err == nil && id > 0
-}
-
 func pageMeta(page Page) map[string]interface{} {
 	return map[string]interface{}{"page": page.Number, "pageSize": page.Size, "total": page.Total}
-}
-
-func decodeJSON(r *http.Request, dst interface{}) error {
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(dst)
 }

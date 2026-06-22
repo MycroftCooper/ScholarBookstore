@@ -3,11 +3,9 @@ package notifications
 import (
 	"errors"
 	"net/http"
-	"strconv"
-
-	"github.com/go-chi/chi/v5"
 
 	"scholarbookstore/services/api/internal/auth"
+	httprequest "scholarbookstore/services/api/internal/http/request"
 	"scholarbookstore/services/api/internal/http/response"
 )
 
@@ -25,7 +23,7 @@ func (h *Handler) ListMine(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	page, pageSize, valid := parsePagination(r)
+	page, pageSize, valid := httprequest.Pagination(r)
 	if !valid {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
 		return
@@ -63,7 +61,7 @@ func (h *Handler) MarkRead(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	id, idOK := parseIDParam(r, "id")
+	id, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "通知不存在", nil)
 		return
@@ -96,33 +94,6 @@ func (h *Handler) MarkAllRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]int64{"count": count}, nil)
-}
-
-func parsePagination(r *http.Request) (int, int, bool) {
-	page := 1
-	pageSize := 20
-	var err error
-	if raw := r.URL.Query().Get("page"); raw != "" {
-		page, err = strconv.Atoi(raw)
-		if err != nil {
-			return 0, 0, false
-		}
-	}
-	if raw := r.URL.Query().Get("pageSize"); raw != "" {
-		pageSize, err = strconv.Atoi(raw)
-		if err != nil {
-			return 0, 0, false
-		}
-	}
-	if page < 1 || pageSize < 1 || pageSize > 100 {
-		return 0, 0, false
-	}
-	return page, pageSize, true
-}
-
-func parseIDParam(r *http.Request, name string) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, name), 10, 64)
-	return id, err == nil && id > 0
 }
 
 func pageMeta(page Page) map[string]interface{} {

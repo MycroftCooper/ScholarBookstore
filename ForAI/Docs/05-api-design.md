@@ -1200,3 +1200,10 @@
 - `GET /api/v1/articles?q=...` 已升级为 PostgreSQL full text search。
 - 搜索范围：`title + summary + content_md`。
 - 有关键词时按相关度优先，再按发布时间兜底；无关键词时保留 `latest`、`hot`、`random`。
+
+## 14. 2026-06-23 后端健康审计补充
+
+- `POST /api/v1/admin/reports/{id}/resolve` 在重复处理举报、或处理并下架时文章状态不允许归档的场景下返回 `409 CONFLICT`。
+- 后端新增 HTTP 冒烟测试，覆盖真实 router、cookie 鉴权、admin/reviewer 权限、文章审核发布、搜索、Tag、举报处理、评论、收藏、关注、通知入口。
+- 统一验证入口：`powershell -ExecutionPolicy Bypass -File scripts\verify.ps1`。
+- 若设置 `TEST_DATABASE_URL`，routes smoke tests 会连接真实 PostgreSQL 测试库；未设置时数据库冒烟用例自动跳过。

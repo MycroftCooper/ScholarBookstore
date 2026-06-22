@@ -34,6 +34,35 @@ cd apps/web
 npm.cmd run typecheck
 ```
 
+## 15. 2026-06-23 后端健康审计与冒烟测试
+
+- [x] 新增 `ForAI/Docs/12-backend-health-audit.md`，记录后端模块边界、测试缺口、P0/P1/P2 风险和后续重构建议。
+- [x] 新增 `ForAI/Docs/13-system-capability-map.md`，作为当前系统能力、权限、数据表、页面入口、测试状态的总览。
+- [x] 新增 `scripts/verify.ps1`，统一执行后端测试、前端 typecheck 和编码扫描。
+- [x] 新增 `scripts/check-encoding.ps1`，扫描高置信 mojibake 特征，排除缓存、依赖和二进制文件。
+- [x] 新增 HTTP 冒烟测试脚手架 `services/api/internal/testutil` 和 routes smoke tests；设置 `TEST_DATABASE_URL` 后覆盖真实 PostgreSQL + router + cookie 鉴权链路。
+- [x] 小规模后端重构：新增 `internal/http/request`，并接入 users/tags/reports handler 的 JSON、分页、路径 ID 解析。
+- [x] 修复举报重复处理错误映射：`ErrConflict` 返回 `409 CONFLICT`。
+
+本阶段不启动前端美化，只保持毛坯页面可调用、可展示错误/空态、可手动验证。
+
+## 16. 2026-06-23 后端测试基线补强
+
+- [x] 新增 `scripts/prepare-test-db.ps1`，用于创建本地 `kb_test` 并执行 goose migration。
+- [x] routes 冒烟测试补充收藏夹链路：默认收藏夹、自定义收藏夹、重命名、移动收藏、删除收藏夹后转移到默认收藏夹。
+- [x] comments service 测试补充：投票参数、取消投票、隐藏/恢复、reviewer/admin 删除权限传参。
+- [x] follows service 测试补充：用户名 trim、非法输入、关注/粉丝列表鉴权。
+- [x] notifications service 测试补充：recipient scope、分页规范化、单条/全部已读。
+- [x] 小规模后端重构继续推进：articles/comments/bookmarks/notifications handler 接入 `internal/http/request`。
+
+真实数据库冒烟启动方式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\prepare-test-db.ps1
+$env:TEST_DATABASE_URL = "postgres://postgres:postgres123@localhost:5432/kb_test?sslmode=disable"
+powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
+```
+
 ## 1. 阶段 0：项目初始化
 
 目标：

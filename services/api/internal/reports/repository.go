@@ -91,6 +91,13 @@ func (r *Repository) Resolve(ctx context.Context, id int64, reviewerID int64, st
 		returning id, article_id
 	`, id, status, reviewerID, note).Scan(&updatedID, &articleID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		exists, err := r.reportExists(ctx, tx, id)
+		if err != nil {
+			return Report{}, err
+		}
+		if exists {
+			return Report{}, ErrConflict
+		}
 		return Report{}, ErrNotFound
 	}
 	if err != nil {
@@ -107,7 +114,7 @@ func (r *Repository) Resolve(ctx context.Context, id int64, reviewerID int64, st
 			return Report{}, fmt.Errorf("archive reported article: %w", err)
 		}
 		if cmd.RowsAffected() == 0 {
-			return Report{}, ErrNotFound
+			return Report{}, ErrConflict
 		}
 	}
 
@@ -123,6 +130,20 @@ func (r *Repository) Resolve(ctx context.Context, id int64, reviewerID int64, st
 
 func (r *Repository) FindByID(ctx context.Context, id int64) (Report, error) {
 	return r.findByID(ctx, r.db, id)
+}
+
+func (r *Repository) reportExists(ctx context.Context, db queryer, id int64) (bool, error) {
+	var exists bool
+	err := db.QueryRow(ctx, `
+		select exists (
+			select 1 from article_reports
+			where id = $1 and deleted_at is null
+		)
+	`, id).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check report existence: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *Repository) findByID(ctx context.Context, db queryer, id int64) (Report, error) {
