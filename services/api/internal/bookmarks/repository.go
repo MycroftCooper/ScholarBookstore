@@ -107,6 +107,61 @@ func (r *Repository) CreateCollection(ctx context.Context, userID int64, name st
 	return item, nil
 }
 
+func (r *Repository) UpdateCollection(ctx context.Context, userID int64, collectionID int64, name string) (Collection, error) {
+	const query = `
+		update bookmark_collections
+		set name = $3, updated_at = now()
+		where id = $1
+			and user_id = $2
+			and is_default = false
+			and deleted_at is null
+		returning id, user_id, name, is_default,
+			(select count(*) from article_bookmarks b where b.collection_id = bookmark_collections.id and b.deleted_at is null) as item_count,
+			created_at, updated_at
+	`
+	item, err := scanCollection(r.db.QueryRow(ctx, query, collectionID, userID, name))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Collection{}, ErrNotFound
+	}
+	if err != nil {
+		if isUniqueViolation(err) {
+			return Collection{}, ErrConflict
+		}
+		return Collection{}, fmt.Errorf("update bookmark collection: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) DeleteCollection(ctx context.Context, tx pgx.Tx, userID int64, collectionID int64, fallbackCollectionID int64) error {
+	const moveQuery = `
+		update article_bookmarks
+		set collection_id = $3
+		where user_id = $1
+			and collection_id = $2
+			and deleted_at is null
+	`
+	if _, err := tx.Exec(ctx, moveQuery, userID, collectionID, fallbackCollectionID); err != nil {
+		return fmt.Errorf("move bookmarks before deleting collection: %w", err)
+	}
+
+	const deleteQuery = `
+		update bookmark_collections
+		set deleted_at = now(), updated_at = now()
+		where id = $1
+			and user_id = $2
+			and is_default = false
+			and deleted_at is null
+	`
+	tag, err := tx.Exec(ctx, deleteQuery, collectionID, userID)
+	if err != nil {
+		return fmt.Errorf("delete bookmark collection: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repository) ListCollections(ctx context.Context, userID int64) ([]Collection, error) {
 	const query = `
 		select
@@ -153,6 +208,30 @@ func (r *Repository) AddBookmark(ctx context.Context, tx pgx.Tx, userID int64, a
 		return false, fmt.Errorf("add article bookmark: %w", err)
 	}
 	return true, nil
+}
+
+func (r *Repository) MoveBookmark(ctx context.Context, userID int64, bookmarkID int64, collectionID int64) (BookmarkedArticle, error) {
+	const query = `
+		update article_bookmarks b
+		set collection_id = $3
+		where b.id = $1
+			and b.user_id = $2
+			and b.deleted_at is null
+			and exists (
+				select 1 from bookmark_collections c
+				where c.id = $3 and c.user_id = $2 and c.deleted_at is null
+			)
+		returning b.id
+	`
+	var id int64
+	err := r.db.QueryRow(ctx, query, bookmarkID, userID, collectionID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return BookmarkedArticle{}, ErrNotFound
+	}
+	if err != nil {
+		return BookmarkedArticle{}, fmt.Errorf("move bookmark: %w", err)
+	}
+	return r.findBookmark(ctx, userID, id)
 }
 
 func (r *Repository) RemoveBookmark(ctx context.Context, userID int64, articleID int64) (State, error) {
@@ -302,6 +381,52 @@ func (r *Repository) ListBookmarks(ctx context.Context, userID int64, collection
 		return nil, 0, fmt.Errorf("iterate bookmarks: %w", err)
 	}
 	return items, total, nil
+}
+
+func (r *Repository) findBookmark(ctx context.Context, userID int64, bookmarkID int64) (BookmarkedArticle, error) {
+	const query = `
+		select
+			b.id, b.collection_id, c.name, a.id, a.module_id, m.slug, m.name,
+			a.author_id, u.username, a.title, a.summary, a.published_at,
+			a.word_count, a.reading_minutes, a.view_count, a.revision_count, b.created_at
+		from article_bookmarks b
+		join bookmark_collections c on c.id = b.collection_id
+		join articles a on a.id = b.article_id
+		join modules m on m.id = a.module_id
+		join users u on u.id = a.author_id
+		where b.id = $1
+			and b.user_id = $2
+			and b.deleted_at is null
+			and a.status = 'published'
+			and a.deleted_at is null
+	`
+	var item BookmarkedArticle
+	err := r.db.QueryRow(ctx, query, bookmarkID, userID).Scan(
+		&item.BookmarkID,
+		&item.CollectionID,
+		&item.CollectionName,
+		&item.ArticleID,
+		&item.ModuleID,
+		&item.ModuleSlug,
+		&item.ModuleName,
+		&item.AuthorID,
+		&item.AuthorUsername,
+		&item.Title,
+		&item.Summary,
+		&item.PublishedAt,
+		&item.WordCount,
+		&item.ReadingMinutes,
+		&item.ViewCount,
+		&item.RevisionCount,
+		&item.BookmarkedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return BookmarkedArticle{}, ErrNotFound
+	}
+	if err != nil {
+		return BookmarkedArticle{}, fmt.Errorf("find bookmark: %w", err)
+	}
+	return item, nil
 }
 
 func (r *Repository) findDefaultCollection(ctx context.Context, tx pgx.Tx, userID int64) (Collection, error) {

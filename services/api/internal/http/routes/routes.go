@@ -15,6 +15,7 @@ import (
 	"scholarbookstore/services/api/internal/bookmarks"
 	"scholarbookstore/services/api/internal/comments"
 	"scholarbookstore/services/api/internal/config"
+	"scholarbookstore/services/api/internal/dashboard"
 	"scholarbookstore/services/api/internal/domains"
 	"scholarbookstore/services/api/internal/follows"
 	authmiddleware "scholarbookstore/services/api/internal/http/middleware"
@@ -22,6 +23,7 @@ import (
 	"scholarbookstore/services/api/internal/modules"
 	"scholarbookstore/services/api/internal/notifications"
 	"scholarbookstore/services/api/internal/reports"
+	"scholarbookstore/services/api/internal/tags"
 	apiuploads "scholarbookstore/services/api/internal/uploads"
 	"scholarbookstore/services/api/internal/users"
 )
@@ -78,6 +80,12 @@ func New(deps Dependencies) http.Handler {
 	uploadRepo := apiuploads.NewRepository(deps.DB)
 	uploadService := apiuploads.NewService(deps.Config, uploadRepo)
 	uploadHandler := apiuploads.NewHandler(uploadService)
+	tagRepo := tags.NewRepository(deps.DB)
+	tagService := tags.NewService(tagRepo)
+	tagHandler := tags.NewHandler(tagService)
+	dashboardRepo := dashboard.NewRepository(deps.DB)
+	dashboardService := dashboard.NewService(dashboardRepo)
+	dashboardHandler := dashboard.NewHandler(dashboardService)
 
 	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(deps.Config.UploadDir))))
 
@@ -101,6 +109,7 @@ func New(deps Dependencies) http.Handler {
 		r.Get("/modules/{slug}", moduleHandler.Detail)
 		r.Get("/articles", articleHandler.ListPublished)
 		r.Get("/articles/{id}", articleHandler.DetailPublished)
+		r.Get("/tags", tagHandler.List)
 		r.Get("/users/{username}", userHandler.PublicAuthorProfile)
 
 		r.Group(func(r chi.Router) {
@@ -121,7 +130,10 @@ func New(deps Dependencies) http.Handler {
 			r.Get("/me/articles/{id}", articleHandler.DetailMine)
 			r.Get("/me/bookmark-collections", bookmarkHandler.ListCollections)
 			r.Post("/me/bookmark-collections", bookmarkHandler.CreateCollection)
+			r.Patch("/me/bookmark-collections/{id}", bookmarkHandler.UpdateCollection)
+			r.Delete("/me/bookmark-collections/{id}", bookmarkHandler.DeleteCollection)
 			r.Get("/me/bookmarks", bookmarkHandler.ListBookmarks)
+			r.Patch("/me/bookmarks/{id}", bookmarkHandler.MoveBookmark)
 			r.Get("/me/following", followHandler.ListFollowing)
 			r.Get("/me/followers", followHandler.ListFollowers)
 			r.Get("/users/{username}/follow", followHandler.State)
@@ -143,6 +155,12 @@ func New(deps Dependencies) http.Handler {
 			r.Patch("/admin/domains/{id}", domainHandler.Update)
 			r.Post("/admin/modules", moduleHandler.Create)
 			r.Patch("/admin/modules/{id}", moduleHandler.Update)
+			r.Get("/admin/users", userHandler.ListAdmin)
+			r.Patch("/admin/users/{id}", userHandler.UpdateAdmin)
+			r.Get("/admin/tags", tagHandler.List)
+			r.Patch("/admin/tags/{id}", tagHandler.Update)
+			r.Delete("/admin/tags/{id}", tagHandler.Delete)
+			r.Post("/admin/tags/merge", tagHandler.Merge)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -159,6 +177,7 @@ func New(deps Dependencies) http.Handler {
 			r.Post("/admin/comments/{id}/show", commentHandler.Show)
 			r.Get("/admin/reports", reportHandler.ListAdmin)
 			r.Post("/admin/reports/{id}/resolve", reportHandler.Resolve)
+			r.Get("/admin/dashboard", dashboardHandler.Snapshot)
 		})
 	})
 

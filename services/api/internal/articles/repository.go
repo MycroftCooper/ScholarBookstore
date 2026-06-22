@@ -24,14 +24,16 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) ListPublished(ctx context.Context, filter PublishedArticleFilter, page int, pageSize int) ([]Article, int64, error) {
 	args := []interface{}{}
+	queryArgIndex := 0
 	whereClause := "a.status = 'published' and a.deleted_at is null and d.deleted_at is null and d.is_active = true"
 	if filter.ModuleSlug != "" {
 		args = append(args, filter.ModuleSlug)
 		whereClause += fmt.Sprintf(" and m.slug = $%d and m.deleted_at is null and m.is_active = true", len(args))
 	}
 	if filter.Query != "" {
-		args = append(args, "%"+filter.Query+"%")
-		whereClause += fmt.Sprintf(" and (a.title ilike $%d or a.summary ilike $%d or a.content_md ilike $%d)", len(args), len(args), len(args))
+		args = append(args, filter.Query)
+		queryArgIndex = len(args)
+		whereClause += fmt.Sprintf(" and a.search_vector @@ websearch_to_tsquery('simple', $%d)", len(args))
 	}
 	if filter.TagSlug != "" {
 		args = append(args, filter.TagSlug)
@@ -44,11 +46,15 @@ func (r *Repository) ListPublished(ctx context.Context, filter PublishedArticleF
 	}
 
 	orderBy := "a.published_at desc nulls last, a.id desc"
-	switch filter.Sort {
-	case "hot":
-		orderBy = "coalesce(a.view_count, 0) / power(greatest(extract(epoch from (now() - coalesce(a.published_at, a.created_at))) / 3600, 0) + 1, 0.8) desc, a.published_at desc nulls last"
-	case "random":
-		orderBy = "random()"
+	if filter.Query != "" {
+		orderBy = fmt.Sprintf("ts_rank_cd(a.search_vector, websearch_to_tsquery('simple', $%d)) desc, a.published_at desc nulls last, a.id desc", queryArgIndex)
+	} else {
+		switch filter.Sort {
+		case "hot":
+			orderBy = "coalesce(a.view_count, 0) / power(greatest(extract(epoch from (now() - coalesce(a.published_at, a.created_at))) / 3600, 0) + 1, 0.8) desc, a.published_at desc nulls last"
+		case "random":
+			orderBy = "random()"
+		}
 	}
 
 	countQuery := fmt.Sprintf(`

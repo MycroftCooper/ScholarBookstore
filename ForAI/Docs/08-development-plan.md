@@ -13,9 +13,9 @@
 - 图片上传到本地 `uploads`，Markdown 引用图片 URL。
 - 管理后台领域/版块管理、文章隐藏/恢复、评论隐藏/恢复/删除。
 - 公开文章搜索与发现页，包括关键词搜索、Tag 筛选、热点聚合和随机文章。
-- 评论赞踩与最新/最热排序。
-- 收藏文章、默认收藏夹、自定义收藏夹、我的收藏页和 `article_bookmark` 通知。
-- 关注/取关用户、关注/粉丝列表、作者页关注按钮和 `followee_article` 通知。
+- 评论赞踩、最新/最热排序、加载更多、我的评论互动数据和隐藏/删除占位展示。
+- 收藏文章、默认收藏夹、自定义收藏夹、收藏夹重命名/删除、移动收藏、我的收藏页和 `article_bookmark` 通知。
+- 关注/取关用户、关注/粉丝列表、作者页与文章详情页关注按钮和 `followee_article` 通知。
 - 文章举报、后台举报列表与处理。
 
 当前 MVP 未纳入：
@@ -370,3 +370,26 @@ npm.cmd run typecheck
 
 - 不引入 Kubernetes。
 - 不引入微服务拆分。
+
+---
+
+## 14. 2026-06-23 MVP 后端完善状态
+
+- [x] 后台用户管理：列表、搜索、角色筛选、状态筛选、修改角色、启用/禁用、禁止 admin 禁用自己。
+- [x] 后台 Tag 管理：列表、搜索、重命名、删除、合并、使用次数维护。
+- [x] 公开 Tag 查询：用于投稿页 Tag 推荐和发现页后续接入。
+- [x] 后台数据看板：基础统计和 30 天趋势。
+- [x] 举报处理增强：支持“处理并下架”，举报状态更新与文章下架在同一事务中完成。
+- [x] 公开文章搜索升级：从 `ILIKE` 升级为 PostgreSQL full text search，并增加 GIN 索引 migration。
+- [x] 前端后台毛坯页：`/admin/users`、`/admin/tags`、`/admin/dashboard`；`/admin/reports` 增加处理并下架。
+- [~] 测试覆盖：新增 users、tags、reports service 测试；bookmarks、comments、follows、notifications 仍需继续补充更细测试。
+
+当前验收命令：
+
+```bash
+cd services/api
+go test ./...
+
+cd apps/web
+npm.cmd run typecheck
+```

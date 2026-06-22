@@ -20,8 +20,16 @@ type createCollectionRequest struct {
 	Name string `json:"name"`
 }
 
+type updateCollectionRequest struct {
+	Name string `json:"name"`
+}
+
 type bookmarkArticleRequest struct {
 	CollectionID *int64 `json:"collectionId"`
+}
+
+type moveBookmarkRequest struct {
+	CollectionID int64 `json:"collectionId"`
 }
 
 func NewHandler(service *Service) *Handler {
@@ -69,6 +77,69 @@ func (h *Handler) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, item, nil)
 }
 
+func (h *Handler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	collectionID, idOK := parseIDParam(r, "id")
+	if !idOK {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏夹不存在", nil)
+		return
+	}
+	var req updateCollectionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		return
+	}
+	item, err := h.service.UpdateCollection(r.Context(), user.ID, collectionID, req.Name)
+	if errors.Is(err, ErrInvalidInput) {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "收藏夹名称不合法", nil)
+		return
+	}
+	if errors.Is(err, ErrConflict) {
+		response.Error(w, http.StatusConflict, "CONFLICT", "收藏夹已存在", nil)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏夹不存在或不可重命名", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+	response.JSON(w, http.StatusOK, item, nil)
+}
+
+func (h *Handler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	collectionID, idOK := parseIDParam(r, "id")
+	if !idOK {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏夹不存在", nil)
+		return
+	}
+	err := h.service.DeleteCollection(r.Context(), user.ID, collectionID)
+	if errors.Is(err, ErrForbidden) {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "默认收藏夹不可删除", nil)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏夹不存在", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]bool{"ok": true}, nil)
+}
+
 func (h *Handler) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -99,6 +170,34 @@ func (h *Handler) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, result.Bookmarks, pageMeta(result))
+}
+
+func (h *Handler) MoveBookmark(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	bookmarkID, idOK := parseIDParam(r, "id")
+	if !idOK {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏不存在", nil)
+		return
+	}
+	var req moveBookmarkRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		return
+	}
+	item, err := h.service.MoveBookmark(r.Context(), user.ID, bookmarkID, req.CollectionID)
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "收藏或收藏夹不存在", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+	response.JSON(w, http.StatusOK, item, nil)
 }
 
 func (h *Handler) Add(w http.ResponseWriter, r *http.Request) {

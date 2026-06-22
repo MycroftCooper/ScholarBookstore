@@ -30,14 +30,18 @@ export default function AdminReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleResolve(id: number, nextStatus: "resolved" | "rejected") {
+  async function handleResolve(
+    id: number,
+    nextStatus: "resolved" | "rejected",
+    archiveArticle = false,
+  ) {
     setActingId(id);
     setError("");
     try {
-      await resolveReport(id, nextStatus, nextStatus === "resolved" ? "已处理" : "不成立");
+      await resolveReport(id, nextStatus, nextStatus === "resolved" ? "已处理" : "不成立", archiveArticle);
       await load(status);
-    } catch {
-      setError("处理失败");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "处理失败");
     } finally {
       setActingId(null);
     }
@@ -53,7 +57,7 @@ export default function AdminReportsPage() {
           onChange={(event) => {
             const next = event.target.value as ArticleReport["status"] | "";
             setStatus(next);
-            load(next);
+            load(next).catch(() => setError("举报列表加载失败"));
           }}
           className="mt-5 h-10 rounded-md border border-stone-300 bg-white px-3"
         >
@@ -70,7 +74,10 @@ export default function AdminReportsPage() {
                 #{report.id} / {report.status} / 文章 #{report.articleId} {report.articleTitle}
               </div>
               <p className="mt-2 text-sm text-stone-700">{report.reason}</p>
-              <div className="mt-3 flex gap-2">
+              {report.handleNote && (
+                <p className="mt-2 text-sm text-stone-500">处理说明：{report.handleNote}</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   disabled={actingId === report.id || report.status !== "pending"}
@@ -78,6 +85,14 @@ export default function AdminReportsPage() {
                   className="rounded-md border border-stone-300 px-3 py-2 text-sm disabled:opacity-50"
                 >
                   标记已处理
+                </button>
+                <button
+                  type="button"
+                  disabled={actingId === report.id || report.status !== "pending"}
+                  onClick={() => handleResolve(report.id, "resolved", true)}
+                  className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 disabled:opacity-50"
+                >
+                  处理并下架
                 </button>
                 <button
                   type="button"

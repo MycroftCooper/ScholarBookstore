@@ -5,8 +5,11 @@ import { FormEvent, useEffect, useState } from "react";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import {
   createBookmarkCollection,
+  deleteBookmarkCollection,
   listBookmarkCollections,
   listBookmarks,
+  moveBookmark,
+  updateBookmarkCollection,
   type BookmarkedArticle,
   type BookmarkCollection,
 } from "@/lib/api/bookmarks";
@@ -17,8 +20,10 @@ export default function MyBookmarksPage() {
   const [bookmarks, setBookmarks] = useState<BookmarkedArticle[]>([]);
   const [collectionId, setCollectionId] = useState<number | undefined>();
   const [newCollectionName, setNewCollectionName] = useState("");
+  const [collectionNames, setCollectionNames] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const [actingKey, setActingKey] = useState("");
   const [error, setError] = useState("");
 
   async function load(nextCollectionId = collectionId) {
@@ -28,6 +33,9 @@ export default function MyBookmarksPage() {
     ]);
     setCollections(collectionItems);
     setBookmarks(bookmarkItems);
+    setCollectionNames(
+      Object.fromEntries(collectionItems.map((item) => [item.id, item.name])),
+    );
   }
 
   useEffect(() => {
@@ -69,6 +77,55 @@ export default function MyBookmarksPage() {
       setError(err instanceof ApiError ? err.message : "创建收藏夹失败");
     } finally {
       setActing(false);
+    }
+  }
+
+  async function handleRenameCollection(collection: BookmarkCollection) {
+    const nextName = (collectionNames[collection.id] ?? "").trim();
+    if (!nextName || nextName === collection.name) {
+      return;
+    }
+    setActingKey(`rename-${collection.id}`);
+    setError("");
+    try {
+      await updateBookmarkCollection(collection.id, nextName);
+      await load(collectionId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "重命名收藏夹失败");
+    } finally {
+      setActingKey("");
+    }
+  }
+
+  async function handleDeleteCollection(collection: BookmarkCollection) {
+    if (collection.isDefault) {
+      return;
+    }
+    setActingKey(`delete-${collection.id}`);
+    setError("");
+    try {
+      await deleteBookmarkCollection(collection.id);
+      const nextCollectionId =
+        collectionId === collection.id ? undefined : collectionId;
+      setCollectionId(nextCollectionId);
+      await load(nextCollectionId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "删除收藏夹失败");
+    } finally {
+      setActingKey("");
+    }
+  }
+
+  async function handleMoveBookmark(bookmarkId: number, nextCollectionId: number) {
+    setActingKey(`move-${bookmarkId}`);
+    setError("");
+    try {
+      await moveBookmark(bookmarkId, nextCollectionId);
+      await load(collectionId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "移动收藏失败");
+    } finally {
+      setActingKey("");
     }
   }
 
@@ -114,6 +171,50 @@ export default function MyBookmarksPage() {
               新建收藏夹
             </button>
           </form>
+
+          <div className="grid gap-2 border-t border-stone-100 pt-3">
+            {collections.map((collection) => (
+              <div
+                key={collection.id}
+                className="flex flex-wrap items-center gap-2 text-sm"
+              >
+                <input
+                  value={collectionNames[collection.id] ?? collection.name}
+                  onChange={(event) =>
+                    setCollectionNames((current) => ({
+                      ...current,
+                      [collection.id]: event.target.value,
+                    }))
+                  }
+                  disabled={collection.isDefault}
+                  className="h-9 rounded-md border border-stone-300 px-2"
+                />
+                <span className="text-stone-500">{collection.itemCount} 条</span>
+                {collection.isDefault ? (
+                  <span className="text-xs text-stone-400">默认收藏夹</span>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={actingKey === `rename-${collection.id}`}
+                      onClick={() => handleRenameCollection(collection)}
+                      className="rounded-md border border-stone-300 px-3 py-1 text-sm"
+                    >
+                      重命名
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actingKey === `delete-${collection.id}`}
+                      onClick={() => handleDeleteCollection(collection)}
+                      className="rounded-md border border-red-200 px-3 py-1 text-sm text-red-600"
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -136,15 +237,19 @@ export default function MyBookmarksPage() {
 
         <div className="grid gap-3">
           {bookmarks.map((item) => (
-            <Link
+            <div
               key={item.bookmarkId}
-              href={`/articles/${item.articleId}`}
-              className="rounded-lg border border-stone-200 bg-white p-5 hover:border-stone-300"
+              className="rounded-lg border border-stone-200 bg-white p-5"
             >
               <div className="text-xs text-stone-500">
                 {item.collectionName} / {item.moduleName} / {item.authorUsername}
               </div>
-              <h2 className="mt-2 font-semibold text-ink">{item.title}</h2>
+              <Link
+                href={`/articles/${item.articleId}`}
+                className="mt-2 block font-semibold text-ink hover:text-moss"
+              >
+                {item.title}
+              </Link>
               {item.summary && (
                 <p className="mt-2 text-sm leading-6 text-stone-600">
                   {item.summary}
@@ -157,7 +262,24 @@ export default function MyBookmarksPage() {
                   收藏于 {new Date(item.bookmarkedAt).toLocaleDateString()}
                 </span>
               </div>
-            </Link>
+              <label className="mt-3 block text-sm">
+                <span className="mr-2 text-stone-500">移动到</span>
+                <select
+                  value={item.collectionId}
+                  disabled={actingKey === `move-${item.bookmarkId}`}
+                  onChange={(event) =>
+                    handleMoveBookmark(item.bookmarkId, Number(event.target.value))
+                  }
+                  className="h-9 rounded-md border border-stone-300 bg-white px-2"
+                >
+                  {collections.map((collection) => (
+                    <option key={collection.id} value={collection.id}>
+                      {collection.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           ))}
         </div>
       </section>

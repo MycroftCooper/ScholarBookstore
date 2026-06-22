@@ -21,8 +21,9 @@ type createReportRequest struct {
 }
 
 type resolveReportRequest struct {
-	Status string `json:"status"`
-	Note   string `json:"note"`
+	Status         string `json:"status"`
+	Note           string `json:"note"`
+	ArchiveArticle bool   `json:"archiveArticle"`
 }
 
 func NewHandler(service *Service) *Handler {
@@ -99,7 +100,7 @@ func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
 		return
 	}
-	report, err := h.service.Resolve(r.Context(), reportID, user.ID, req.Status, req.Note)
+	report, err := h.service.Resolve(r.Context(), reportID, user.ID, req.Status, req.Note, req.ArchiveArticle)
 	if errors.Is(err, ErrInvalidInput) {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "处理参数不合法", nil)
 		return

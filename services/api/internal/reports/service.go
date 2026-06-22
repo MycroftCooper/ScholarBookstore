@@ -8,7 +8,7 @@ import (
 type ReportRepository interface {
 	Create(ctx context.Context, articleID int64, reporterID int64, reason string) (Report, error)
 	ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Report, int64, error)
-	Resolve(ctx context.Context, id int64, reviewerID int64, status string, note string) (Report, error)
+	Resolve(ctx context.Context, id int64, reviewerID int64, status string, note string, archiveArticle bool) (Report, error)
 }
 
 type Service struct {
@@ -44,13 +44,16 @@ func (s *Service) ListAdmin(ctx context.Context, status string, page int, pageSi
 	return Page{Number: page, Size: pageSize, Total: total, Reports: ToPublicList(items)}, nil
 }
 
-func (s *Service) Resolve(ctx context.Context, id int64, reviewerID int64, status string, note string) (PublicReport, error) {
+func (s *Service) Resolve(ctx context.Context, id int64, reviewerID int64, status string, note string, archiveArticle bool) (PublicReport, error) {
 	status = strings.TrimSpace(status)
 	note = strings.TrimSpace(note)
 	if id <= 0 || reviewerID <= 0 || (status != "resolved" && status != "rejected") {
 		return PublicReport{}, ErrInvalidInput
 	}
-	item, err := s.repo.Resolve(ctx, id, reviewerID, status, note)
+	if status == "rejected" && archiveArticle {
+		return PublicReport{}, ErrInvalidInput
+	}
+	item, err := s.repo.Resolve(ctx, id, reviewerID, status, note, archiveArticle)
 	if err != nil {
 		return PublicReport{}, err
 	}

@@ -3,6 +3,7 @@ import { apiRequest } from "./client";
 export type CommentItem = {
   id: number;
   articleId: number;
+  articleTitle: string;
   authorId: number;
   authorUsername: string;
   parentId: number | null;
@@ -10,6 +11,7 @@ export type CommentItem = {
   replyToUsername: string | null;
   content: string;
   visibility: "visible" | "hidden";
+  deleted: boolean;
   upVotes: number;
   downVotes: number;
   score: number;
@@ -18,9 +20,16 @@ export type CommentItem = {
   updatedAt: string;
 };
 
-export function listComments(articleId: number, sort: "latest" | "hot" = "latest") {
+export function listComments(
+  articleId: number,
+  sort: "latest" | "hot" = "latest",
+  page = 1,
+  pageSize = 10,
+) {
   const params = new URLSearchParams();
   params.set("sort", sort);
+  params.set("page", String(page));
+  params.set("pageSize", String(pageSize));
   return apiRequest<CommentItem[]>(`/articles/${articleId}/comments?${params.toString()}`);
 }
 
@@ -51,8 +60,11 @@ export function voteComment(commentId: number, value: -1 | 0 | 1) {
   });
 }
 
-export function listMyComments() {
-  return apiRequest<CommentItem[]>("/me/comments");
+export function listMyComments(page = 1, pageSize = 20) {
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("pageSize", String(pageSize));
+  return apiRequest<CommentItem[]>(`/me/comments?${params.toString()}`);
 }
 
 export function listAdminComments() {

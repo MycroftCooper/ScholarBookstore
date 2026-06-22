@@ -48,6 +48,19 @@ export function createBookmarkCollection(name: string) {
   });
 }
 
+export function updateBookmarkCollection(id: number, name: string) {
+  return apiRequest<BookmarkCollection>(`/me/bookmark-collections/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteBookmarkCollection(id: number) {
+  return apiRequest<{ ok: boolean }>(`/me/bookmark-collections/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export function listBookmarks(collectionId?: number) {
   const params = new URLSearchParams();
   if (collectionId) {
@@ -71,5 +84,12 @@ export function addBookmark(articleId: number, collectionId?: number) {
 export function removeBookmark(articleId: number) {
   return apiRequest<BookmarkState>(`/articles/${articleId}/bookmark`, {
     method: "DELETE",
+  });
+}
+
+export function moveBookmark(bookmarkId: number, collectionId: number) {
+  return apiRequest<BookmarkedArticle>(`/me/bookmarks/${bookmarkId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ collectionId }),
   });
 }

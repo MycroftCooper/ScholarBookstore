@@ -16,27 +16,38 @@ type CommentSectionProps = {
   articleId: number;
 };
 
+const commentPageSize = 10;
+
 export function CommentSection({ articleId }: CommentSectionProps) {
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [content, setContent] = useState("");
   const [replyContent, setReplyContent] = useState<Record<number, string>>({});
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [sort, setSort] = useState<"latest" | "hot">("latest");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadComments() {
-    const items = await listComments(articleId, sort);
-    setComments(items);
+  async function loadComments(nextPage = 1, append = false) {
+    const items = await listComments(articleId, sort, nextPage, commentPageSize);
+    setComments((current) => (append ? [...current, ...items] : items));
+    setPage(nextPage);
+    setHasMore(items.filter((item) => item.parentId === null).length >= commentPageSize);
   }
 
   useEffect(() => {
+    setLoading(true);
+    setComments([]);
+    setPage(1);
+    setHasMore(false);
     getCurrentUser()
       .then((user) => {
         setCurrentUser(user);
-        return loadComments();
+        return loadComments(1, false);
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -64,7 +75,7 @@ export function CommentSection({ articleId }: CommentSectionProps) {
     try {
       await createComment(articleId, content);
       setContent("");
-      await loadComments();
+      await loadComments(1, false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError("请先登录后再评论");
@@ -84,7 +95,7 @@ export function CommentSection({ articleId }: CommentSectionProps) {
       await replyComment(parentId, value);
       setReplyContent((current) => ({ ...current, [parentId]: "" }));
       setReplyingTo(null);
-      await loadComments();
+      await loadComments(1, false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError("请先登录后再回复");
@@ -101,7 +112,7 @@ export function CommentSection({ articleId }: CommentSectionProps) {
     setError("");
     try {
       await deleteComment(commentId);
-      await loadComments();
+      await loadComments(1, false);
     } catch {
       setError("删除评论失败，请稍后重试");
     } finally {
@@ -110,6 +121,9 @@ export function CommentSection({ articleId }: CommentSectionProps) {
   }
 
   async function handleVote(comment: CommentItem, value: -1 | 1) {
+    if (comment.deleted || comment.visibility === "hidden") {
+      return;
+    }
     setError("");
     const nextValue = comment.myVote === value ? 0 : value;
     try {
@@ -119,6 +133,18 @@ export function CommentSection({ articleId }: CommentSectionProps) {
       );
     } catch {
       setError("赞踩失败，请稍后重试");
+    }
+  }
+
+  async function handleLoadMore() {
+    setLoadingMore(true);
+    setError("");
+    try {
+      await loadComments(page + 1, true);
+    } catch {
+      setError("加载更多评论失败，请稍后重试");
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -193,15 +219,27 @@ export function CommentSection({ articleId }: CommentSectionProps) {
           {!loading && topLevelComments.length === 0 && (
             <p className="text-sm text-stone-500">暂无评论</p>
           )}
-          {topLevelComments.map((comment) => (
-          <div key={comment.id} className="rounded-md border border-stone-200 p-4">
+          {topLevelComments.map((comment) => {
+            const commentUnavailable =
+              comment.deleted || comment.visibility === "hidden";
+            return (
+          <div
+            key={comment.id}
+            className={`rounded-md border border-stone-200 p-4 ${
+              commentUnavailable ? "bg-stone-50" : ""
+            }`}
+          >
             <div className="text-sm font-medium text-ink">
               {comment.authorUsername}
             </div>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-700">
+            <p
+              className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${
+                commentUnavailable ? "text-stone-500" : "text-stone-700"
+              }`}
+            >
               {comment.content}
             </p>
-            {currentUser && (
+            {currentUser && !commentUnavailable && (
               <div className="mt-2 flex flex-wrap gap-3">
                 <button
                   type="button"
@@ -244,7 +282,7 @@ export function CommentSection({ articleId }: CommentSectionProps) {
               </div>
             )}
 
-            {replyingTo === comment.id && (
+            {replyingTo === comment.id && !commentUnavailable && (
               <div className="mt-3">
                 <textarea
                   value={replyContent[comment.id] ?? ""}
@@ -295,6 +333,7 @@ export function CommentSection({ articleId }: CommentSectionProps) {
                   <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-stone-700">
                     {reply.content}
                   </p>
+                  {!reply.deleted && reply.visibility !== "hidden" && (
                   <div className="mt-2 flex flex-wrap gap-3">
                     <button
                       type="button"
@@ -315,11 +354,23 @@ export function CommentSection({ articleId }: CommentSectionProps) {
                       踩 {reply.downVotes}
                     </button>
                   </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
-          ))}
+            );
+          })}
+          {hasMore && (
+            <button
+              type="button"
+              disabled={loadingMore}
+              onClick={handleLoadMore}
+              className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loadingMore ? "加载中..." : "加载更多评论"}
+            </button>
+          )}
         </div>
       )}
     </section>

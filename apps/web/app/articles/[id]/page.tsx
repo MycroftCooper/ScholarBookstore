@@ -16,14 +16,24 @@ import {
   removeBookmark,
   type BookmarkState,
 } from "@/lib/api/bookmarks";
+import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { createArticleReport } from "@/lib/api/reports";
+import {
+  followUser,
+  getFollowState,
+  unfollowUser,
+  type FollowState,
+} from "@/lib/api/users";
 
 export default function ArticleDetailPage() {
   const params = useParams<{ id: string }>();
   const [article, setArticle] = useState<ArticleSummary | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [bookmarkState, setBookmarkState] = useState<BookmarkState | null>(null);
+  const [followState, setFollowState] = useState<FollowState | null>(null);
   const [bookmarking, setBookmarking] = useState(false);
+  const [following, setFollowing] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportSent, setReportSent] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -46,15 +56,35 @@ export default function ArticleDetailPage() {
     getArticle(id)
       .then((item) => {
         setArticle(item);
-        return getBookmarkState(item.id)
-          .then(setBookmarkState)
-          .catch((err) => {
-            if (err instanceof ApiError && err.status === 401) {
-              setBookmarkState(null);
-              return;
-            }
-            throw err;
-          });
+        return Promise.all([
+          getCurrentUser()
+            .then(setCurrentUser)
+            .catch((err) => {
+              if (err instanceof ApiError && err.status === 401) {
+                setCurrentUser(null);
+                return;
+              }
+              throw err;
+            }),
+          getBookmarkState(item.id)
+            .then(setBookmarkState)
+            .catch((err) => {
+              if (err instanceof ApiError && err.status === 401) {
+                setBookmarkState(null);
+                return;
+              }
+              throw err;
+            }),
+          getFollowState(item.authorUsername)
+            .then(setFollowState)
+            .catch((err) => {
+              if (err instanceof ApiError && err.status === 401) {
+                setFollowState(null);
+                return;
+              }
+              throw err;
+            }),
+        ]);
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) {
@@ -85,6 +115,28 @@ export default function ArticleDetailPage() {
       setError("收藏操作失败，请稍后重试");
     } finally {
       setBookmarking(false);
+    }
+  }
+
+  async function handleFollowToggle() {
+    if (!article || following) {
+      return;
+    }
+    setFollowing(true);
+    setError("");
+    try {
+      const next = followState?.following
+        ? await unfollowUser(article.authorUsername)
+        : await followUser(article.authorUsername);
+      setFollowState(next);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : "关注操作失败，请稍后重试");
+    } finally {
+      setFollowing(false);
     }
   }
 
@@ -142,6 +194,24 @@ export default function ArticleDetailPage() {
                   >
                     {article.authorUsername}
                   </Link>
+                  {currentUser?.username !== article.authorUsername &&
+                    (followState ? (
+                      <button
+                        type="button"
+                        disabled={following}
+                        onClick={handleFollowToggle}
+                        className="rounded-md border border-stone-300 px-2 py-1 text-xs text-stone-700 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {followState.following ? "已关注" : "关注"}
+                      </button>
+                    ) : (
+                      <Link
+                        href="/login"
+                        className="rounded-md border border-stone-300 px-2 py-1 text-xs text-stone-700 hover:border-moss hover:text-moss"
+                      >
+                        登录后关注
+                      </Link>
+                    ))}
                 </div>
                 <h1 className="mt-3 text-3xl font-semibold leading-tight text-ink">
                   {article.title}

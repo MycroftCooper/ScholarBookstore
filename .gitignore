@@ -6,6 +6,7 @@
 
 # Dependencies
 node_modules/
+.codex-runtime/
 services/api/.gocache/
 services/api/.gomodcache/
 

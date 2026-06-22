@@ -75,25 +75,57 @@ func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pag
 	return items, total, nil
 }
 
-func (r *Repository) Resolve(ctx context.Context, id int64, reviewerID int64, status string, note string) (Report, error) {
-	const query = `
+func (r *Repository) Resolve(ctx context.Context, id int64, reviewerID int64, status string, note string, archiveArticle bool) (Report, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return Report{}, fmt.Errorf("begin resolve report: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var updatedID int64
+	var articleID int64
+	err = tx.QueryRow(ctx, `
 		update article_reports
 		set status = $2, handled_by = $3, handled_at = now(), handle_note = $4, updated_at = now()
 		where id = $1 and status = 'pending' and deleted_at is null
-		returning id
-	`
-	var updatedID int64
-	err := r.db.QueryRow(ctx, query, id, status, reviewerID, note).Scan(&updatedID)
+		returning id, article_id
+	`, id, status, reviewerID, note).Scan(&updatedID, &articleID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Report{}, ErrNotFound
 	}
 	if err != nil {
 		return Report{}, fmt.Errorf("resolve report: %w", err)
 	}
-	return r.FindByID(ctx, updatedID)
+
+	if archiveArticle {
+		cmd, err := tx.Exec(ctx, `
+			update articles
+			set status = 'archived', updated_at = now()
+			where id = $1 and status = 'published' and deleted_at is null
+		`, articleID)
+		if err != nil {
+			return Report{}, fmt.Errorf("archive reported article: %w", err)
+		}
+		if cmd.RowsAffected() == 0 {
+			return Report{}, ErrNotFound
+		}
+	}
+
+	item, err := r.findByID(ctx, tx, updatedID)
+	if err != nil {
+		return Report{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Report{}, fmt.Errorf("commit resolve report: %w", err)
+	}
+	return item, nil
 }
 
 func (r *Repository) FindByID(ctx context.Context, id int64) (Report, error) {
+	return r.findByID(ctx, r.db, id)
+}
+
+func (r *Repository) findByID(ctx context.Context, db queryer, id int64) (Report, error) {
 	const query = `
 		select
 			ar.id, ar.article_id, a.title, ar.reporter_id, reporter.username,
@@ -105,7 +137,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (Report, error) {
 		left join users handler on handler.id = ar.handled_by
 		where ar.id = $1 and ar.deleted_at is null
 	`
-	item, err := scanReport(r.db.QueryRow(ctx, query, id))
+	item, err := scanReport(db.QueryRow(ctx, query, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Report{}, ErrNotFound
 	}
@@ -113,6 +145,10 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (Report, error) {
 		return Report{}, err
 	}
 	return item, nil
+}
+
+type queryer interface {
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
 }
 
 func (r *Repository) scanMany(ctx context.Context, query string, args ...interface{}) ([]Report, error) {

@@ -15,8 +15,11 @@ type BookmarkRepository interface {
 	EnsureDefaultCollection(ctx context.Context, tx pgx.Tx, userID int64) (Collection, error)
 	FindCollectionForUser(ctx context.Context, tx pgx.Tx, userID int64, collectionID int64) (Collection, error)
 	CreateCollection(ctx context.Context, userID int64, name string) (Collection, error)
+	UpdateCollection(ctx context.Context, userID int64, collectionID int64, name string) (Collection, error)
+	DeleteCollection(ctx context.Context, tx pgx.Tx, userID int64, collectionID int64, fallbackCollectionID int64) error
 	ListCollections(ctx context.Context, userID int64) ([]Collection, error)
 	AddBookmark(ctx context.Context, tx pgx.Tx, userID int64, articleID int64, collectionID int64) (bool, error)
+	MoveBookmark(ctx context.Context, userID int64, bookmarkID int64, collectionID int64) (BookmarkedArticle, error)
 	RemoveBookmark(ctx context.Context, userID int64, articleID int64) (State, error)
 	State(ctx context.Context, userID int64, articleID int64) (State, error)
 	StateTx(ctx context.Context, tx pgx.Tx, userID int64, articleID int64) (State, error)
@@ -72,6 +75,55 @@ func (s *Service) CreateCollection(ctx context.Context, userID int64, name strin
 		return PublicCollection{}, err
 	}
 	return ToPublicCollection(item), nil
+}
+
+func (s *Service) UpdateCollection(ctx context.Context, userID int64, collectionID int64, name string) (PublicCollection, error) {
+	if userID <= 0 {
+		return PublicCollection{}, ErrForbidden
+	}
+	if collectionID <= 0 {
+		return PublicCollection{}, ErrNotFound
+	}
+	name = NormalizeCollectionName(name)
+	if name == "" || len([]rune(name)) > 80 {
+		return PublicCollection{}, ErrInvalidInput
+	}
+	item, err := s.bookmarks.UpdateCollection(ctx, userID, collectionID, name)
+	if err != nil {
+		return PublicCollection{}, err
+	}
+	return ToPublicCollection(item), nil
+}
+
+func (s *Service) DeleteCollection(ctx context.Context, userID int64, collectionID int64) error {
+	if userID <= 0 {
+		return ErrForbidden
+	}
+	if collectionID <= 0 {
+		return ErrNotFound
+	}
+
+	tx, err := s.bookmarks.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	target, err := s.bookmarks.FindCollectionForUser(ctx, tx, userID, collectionID)
+	if err != nil {
+		return err
+	}
+	if target.IsDefault {
+		return ErrForbidden
+	}
+	fallback, err := s.bookmarks.EnsureDefaultCollection(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	if err := s.bookmarks.DeleteCollection(ctx, tx, userID, collectionID, fallback.ID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Service) Add(ctx context.Context, userID int64, articleID int64, collectionID *int64) (PublicState, error) {
@@ -147,6 +199,20 @@ func (s *Service) Remove(ctx context.Context, userID int64, articleID int64) (Pu
 		return PublicState{}, err
 	}
 	return ToPublicState(state), nil
+}
+
+func (s *Service) MoveBookmark(ctx context.Context, userID int64, bookmarkID int64, collectionID int64) (PublicBookmarkedArticle, error) {
+	if userID <= 0 {
+		return PublicBookmarkedArticle{}, ErrForbidden
+	}
+	if bookmarkID <= 0 || collectionID <= 0 {
+		return PublicBookmarkedArticle{}, ErrNotFound
+	}
+	item, err := s.bookmarks.MoveBookmark(ctx, userID, bookmarkID, collectionID)
+	if err != nil {
+		return PublicBookmarkedArticle{}, err
+	}
+	return ToPublicBookmark(item), nil
 }
 
 func (s *Service) State(ctx context.Context, userID int64, articleID int64) (PublicState, error) {

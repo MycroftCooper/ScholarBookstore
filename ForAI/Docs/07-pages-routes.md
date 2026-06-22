@@ -224,12 +224,16 @@
 - 登录后展示评论回复列表。
 - 登录后展示评论输入框。
 - 登录后展示回复评论输入框。
+- 作者信息区展示关注/取关入口。
+- 隐藏或已删除评论展示占位内容。
 
 用户操作：
 
 - 浏览文章。
 - 登录后发表评论。
 - 登录后回复评论。
+- 登录后加载更多评论。
+- 登录后关注/取关作者。
 - 作者或管理角色删除评论和回复。
 
 调用 API：
@@ -238,7 +242,11 @@
 - `GET /api/v1/articles/{id}/comments`，仅登录后调用
 - `POST /api/v1/articles/{id}/comments`
 - `POST /api/v1/comments/{id}/replies`
+- `PUT /api/v1/comments/{id}/vote`
 - `DELETE /api/v1/comments/{id}`
+- `GET /api/v1/users/{username}/follow`
+- `POST /api/v1/users/{username}/follow`
+- `DELETE /api/v1/users/{username}/follow`
 
 当前实现说明：
 
@@ -246,7 +254,9 @@
 - 成功读取已发布文章详情后，后端递增 `viewCount`。
 - 文章详情展示标签，标签内显示 `usageCount`。
 - 登录用户评论区支持最新/最热排序。
+- 登录用户评论区支持加载更多。
 - 登录用户可对评论和回复点赞、点踩、取消或切换赞踩。
+- 文章详情页作者信息区已接入关注按钮。
 - Markdown 标题自动生成锚点，右侧目录可跳转。
 
 登录要求：
@@ -529,7 +539,9 @@
 展示内容：
 
 - 评论内容摘要。
-- 所属文章。
+- 所属文章标题。
+- 评论赞踩互动数据。
+- 隐藏状态。
 - 发布时间。
 - 删除入口。
 
@@ -550,19 +562,24 @@
 
 用途：
 
-- 用户查看自己收藏的文章，按收藏夹筛选，并创建收藏夹。
+- 用户查看自己收藏的文章，按收藏夹筛选，并管理收藏夹。
 
 展示内容：
 
 - 收藏夹下拉筛选。
 - 新建收藏夹表单。
+- 收藏夹重命名、删除。
 - 收藏文章列表。
+- 将收藏移动到其他收藏夹。
 
 调用 API：
 
 - `GET /api/v1/me/bookmark-collections`
 - `POST /api/v1/me/bookmark-collections`
+- `PATCH /api/v1/me/bookmark-collections/{id}`
+- `DELETE /api/v1/me/bookmark-collections/{id}`
 - `GET /api/v1/me/bookmarks`
+- `PATCH /api/v1/me/bookmarks/{id}`
 
 登录要求：
 

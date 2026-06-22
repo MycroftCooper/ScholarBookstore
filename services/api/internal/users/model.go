@@ -22,6 +22,7 @@ type PublicUser struct {
 	Username  string    `json:"username"`
 	Email     string    `json:"email"`
 	Role      string    `json:"role"`
+	Status    string    `json:"status"`
 	AvatarURL string    `json:"avatarUrl"`
 	Bio       string    `json:"bio"`
 	School    string    `json:"school"`
@@ -33,6 +34,25 @@ type UpdateProfileInput struct {
 	Bio     string
 	School  string
 	Company string
+}
+
+type AdminUserFilter struct {
+	Query  string
+	Role   string
+	Status string
+}
+
+type UpdateAdminUserInput struct {
+	Role    *string
+	Status  *string
+	ActorID int64
+}
+
+type AdminUserPage struct {
+	Number int
+	Size   int
+	Total  int64
+	Users  []PublicUser
 }
 
 type AuthorArticle struct {
@@ -76,6 +96,7 @@ func ToPublic(user User) PublicUser {
 		Username:  user.Username,
 		Email:     user.Email,
 		Role:      user.Role,
+		Status:    user.Status,
 		AvatarURL: user.AvatarURL,
 		Bio:       user.Bio,
 		School:    user.School,

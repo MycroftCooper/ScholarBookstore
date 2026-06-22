@@ -12,8 +12,10 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("user not found")
-	ErrConflict = errors.New("user already exists")
+	ErrNotFound     = errors.New("user not found")
+	ErrConflict     = errors.New("user already exists")
+	ErrInvalidInput = errors.New("invalid user input")
+	ErrForbidden    = errors.New("user action forbidden")
 )
 
 type Repository struct {
@@ -188,6 +190,91 @@ func (r *Repository) FindPublicAuthorProfile(ctx context.Context, username strin
 	}
 
 	return author, total, nil
+}
+
+func (r *Repository) ListAdmin(ctx context.Context, filter AdminUserFilter, page int, pageSize int) ([]User, int64, error) {
+	args := []interface{}{}
+	where := "deleted_at is null"
+	if filter.Query != "" {
+		args = append(args, "%"+filter.Query+"%")
+		where += fmt.Sprintf(" and (username ilike $%d or email ilike $%d)", len(args), len(args))
+	}
+	if filter.Role != "" {
+		args = append(args, filter.Role)
+		where += fmt.Sprintf(" and role = $%d", len(args))
+	}
+	if filter.Status != "" {
+		args = append(args, filter.Status)
+		where += fmt.Sprintf(" and status = $%d", len(args))
+	}
+
+	countQuery := fmt.Sprintf("select count(*) from users where %s", where)
+	var total int64
+	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count admin users: %w", err)
+	}
+
+	args = append(args, pageSize, (page-1)*pageSize)
+	query := fmt.Sprintf(`
+		select
+			id, username, email, password_hash, role, status,
+			avatar_url, bio, school, company, created_at, updated_at
+		from users
+		where %s
+		order by created_at desc, id desc
+		limit $%d offset $%d
+	`, where, len(args)-1, len(args))
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query admin users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(
+			&user.ID,
+			&user.Username,
+			&user.Email,
+			&user.PasswordHash,
+			&user.Role,
+			&user.Status,
+			&user.AvatarURL,
+			&user.Bio,
+			&user.School,
+			&user.Company,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scan admin user: %w", err)
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate admin users: %w", err)
+	}
+	return users, total, nil
+}
+
+func (r *Repository) UpdateAdmin(ctx context.Context, id int64, input UpdateAdminUserInput) (User, error) {
+	const query = `
+		update users
+		set
+			role = coalesce($2, role),
+			status = coalesce($3, status),
+			updated_at = now()
+		where id = $1 and deleted_at is null
+		returning
+			id, username, email, password_hash, role, status,
+			avatar_url, bio, school, company, created_at, updated_at
+	`
+	user, err := r.findOne(ctx, query, id, input.Role, input.Status)
+	if err != nil {
+		return User{}, err
+	}
+	return user, nil
 }
 
 func (r *Repository) findOne(ctx context.Context, query string, args ...interface{}) (User, error) {

@@ -5,6 +5,7 @@ export type CurrentUser = {
   username: string;
   email: string;
   role: "user" | "reviewer" | "admin";
+  status: "active" | "disabled";
   avatarUrl: string;
   bio: string;
   school: string;

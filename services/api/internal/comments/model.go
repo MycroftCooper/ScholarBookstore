@@ -5,6 +5,7 @@ import "time"
 type Comment struct {
 	ID              int64
 	ArticleID       int64
+	ArticleTitle    string
 	AuthorID        int64
 	AuthorUsername  string
 	ParentID        *int64
@@ -12,6 +13,7 @@ type Comment struct {
 	ReplyToUsername *string
 	Content         string
 	Visibility      string
+	Deleted         bool
 	UpVotes         int64
 	DownVotes       int64
 	MyVote          int
@@ -22,6 +24,7 @@ type Comment struct {
 type PublicComment struct {
 	ID              int64     `json:"id"`
 	ArticleID       int64     `json:"articleId"`
+	ArticleTitle    string    `json:"articleTitle"`
 	AuthorID        int64     `json:"authorId"`
 	AuthorUsername  string    `json:"authorUsername"`
 	ParentID        *int64    `json:"parentId"`
@@ -29,6 +32,7 @@ type PublicComment struct {
 	ReplyToUsername *string   `json:"replyToUsername"`
 	Content         string    `json:"content"`
 	Visibility      string    `json:"visibility"`
+	Deleted         bool      `json:"deleted"`
 	UpVotes         int64     `json:"upVotes"`
 	DownVotes       int64     `json:"downVotes"`
 	Score           int64     `json:"score"`
@@ -49,16 +53,25 @@ type CommentableArticle struct {
 }
 
 func ToPublic(comment Comment) PublicComment {
+	content := comment.Content
+	if comment.Deleted {
+		content = "该评论已删除"
+	} else if comment.Visibility == "hidden" {
+		content = "该评论已被隐藏"
+	}
+
 	return PublicComment{
 		ID:              comment.ID,
 		ArticleID:       comment.ArticleID,
+		ArticleTitle:    comment.ArticleTitle,
 		AuthorID:        comment.AuthorID,
 		AuthorUsername:  comment.AuthorUsername,
 		ParentID:        comment.ParentID,
 		ReplyToUserID:   comment.ReplyToUserID,
 		ReplyToUsername: comment.ReplyToUsername,
-		Content:         comment.Content,
+		Content:         content,
 		Visibility:      comment.Visibility,
+		Deleted:         comment.Deleted,
 		UpVotes:         comment.UpVotes,
 		DownVotes:       comment.DownVotes,
 		Score:           comment.UpVotes - comment.DownVotes,

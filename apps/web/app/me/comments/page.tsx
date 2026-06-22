@@ -81,7 +81,7 @@ export default function MyCommentsPage() {
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-stone-500">
-                  {comment.parentId ? "回复" : "评论"} / 文章 #{comment.articleId}
+                  {comment.parentId ? "回复" : "评论"} / {comment.articleTitle}
                 </div>
                 <Link
                   href={`/articles/${comment.articleId}`}
@@ -93,6 +93,12 @@ export default function MyCommentsPage() {
               <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-700">
                 {comment.content}
               </p>
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-stone-500">
+                <span>赞 {comment.upVotes}</span>
+                <span>踩 {comment.downVotes}</span>
+                <span>得分 {comment.score}</span>
+                {comment.visibility === "hidden" && <span>已隐藏</span>}
+              </div>
               <button
                 type="button"
                 disabled={actingId === comment.id}

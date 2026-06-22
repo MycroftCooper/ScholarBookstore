@@ -607,7 +607,14 @@
 - `page`
 - `pageSize`
 
-响应：文章下可见评论。当前返回扁平列表并带 `parentId`，前端按顶级评论和回复展示。评论对象包含 `upVotes`、`downVotes`、`score`、`myVote`。
+响应：按顶级评论分页，并带出当前页顶级评论下的可见回复。当前返回扁平列表并带 `parentId`，前端按顶级评论和回复展示。隐藏或删除的顶级评论会返回占位内容，用于保持回复树不断裂。
+
+评论对象包含：
+
+- `articleTitle`：所属文章标题。
+- `visibility`：`visible` 或 `hidden`。
+- `deleted`：是否已软删除。
+- `upVotes`、`downVotes`、`score`、`myVote`：评论赞踩数据。
 
 错误：
 
@@ -706,6 +713,7 @@
 - `value = -1` 表示踩。
 - `value = 0` 表示取消当前赞/踩。
 - 只能对可见、未删除且所属文章已发布的评论赞踩。
+- 不可对自己的评论投票。
 - 同一用户对同一评论最多保留一条赞踩记录，切换时覆盖旧值。
 
 响应：更新后的评论对象，包含赞踩统计与当前用户 `myVote`。
@@ -721,7 +729,7 @@
 - `FORBIDDEN`
 - `NOT_FOUND`
 
-### 7.5 我的评论
+### 7.6 我的评论
 
 - Method：`GET`
 - Path：`/api/v1/me/comments`
@@ -733,9 +741,9 @@
 - `page`
 - `pageSize`
 
-响应：当前用户发表过的评论和回复。
+响应：当前用户发表过的评论和回复，包含所属文章标题、赞踩统计、隐藏状态。
 
-### 7.6 后台评论列表
+### 7.7 后台评论列表
 
 - Method：`GET`
 - Path：`/api/v1/admin/comments`
@@ -748,7 +756,7 @@
 
 - `FORBIDDEN`
 
-### 7.7 隐藏评论
+### 7.8 隐藏评论
 
 - Method：`POST`
 - Path：`/api/v1/admin/comments/{id}/hide`
@@ -762,7 +770,7 @@
 - `NOT_FOUND`
 - `FORBIDDEN`
 
-### 7.8 恢复评论
+### 7.9 恢复评论
 
 - Method：`POST`
 - Path：`/api/v1/admin/comments/{id}/show`
@@ -872,6 +880,69 @@
 - `pageSize`
 
 响应：当前用户收藏的已发布文章列表。
+
+### 8.7 重命名收藏夹
+
+- Method：`PATCH`
+- Path：`/api/v1/me/bookmark-collections/{id}`
+- 登录：是
+- 角色：user、reviewer、admin
+
+请求：
+
+```json
+{
+  "name": "后端资料"
+}
+```
+
+约束：
+
+- 只能重命名自己的非默认收藏夹。
+- 名称不能为空，最长 80 字。
+- 同一用户下收藏夹名称不允许重复，大小写不敏感。
+
+错误：
+
+- `VALIDATION_ERROR`
+- `CONFLICT`
+- `NOT_FOUND`
+
+### 8.8 删除收藏夹
+
+- Method：`DELETE`
+- Path：`/api/v1/me/bookmark-collections/{id}`
+- 登录：是
+- 角色：user、reviewer、admin
+
+约束：
+
+- 默认收藏夹不可删除。
+- 删除非默认收藏夹时，夹内收藏会转移到默认收藏夹。
+
+错误：
+
+- `FORBIDDEN`
+- `NOT_FOUND`
+
+### 8.9 移动收藏
+
+- Method：`PATCH`
+- Path：`/api/v1/me/bookmarks/{id}`
+- 登录：是
+- 角色：user、reviewer、admin
+
+请求：
+
+```json
+{
+  "collectionId": 2
+}
+```
+
+约束：只能移动自己的收藏到自己的收藏夹。
+
+响应：移动后的收藏条目。
 
 ## 9. 用户与关注接口
 
@@ -1096,3 +1167,36 @@
 - 只允许图片 MIME。
 - 默认最大大小 5MB。
 - 文件扩展名和 MIME 必须双重校验。
+
+---
+
+## 13. 2026-06-23 API 补充：后台、Tag、看板、搜索
+
+### 13.1 后台用户管理
+
+- `GET /api/v1/admin/users`：admin only；支持 `q`、`role`、`status`、`page`、`pageSize`。
+- `PATCH /api/v1/admin/users/{id}`：admin only；支持更新 `role` 和 `status`；admin 不可禁用自己。
+
+### 13.2 Tag 查询与后台管理
+
+- `GET /api/v1/tags`：公开接口；支持 `q`、`page`、`pageSize`，用于投稿页 Tag 推荐。
+- `GET /api/v1/admin/tags`：admin only；Tag 列表与搜索。
+- `PATCH /api/v1/admin/tags/{id}`：admin only；重命名 Tag 并同步 slug。
+- `DELETE /api/v1/admin/tags/{id}`：admin only；删除 Tag 并解绑文章。
+- `POST /api/v1/admin/tags/merge`：admin only；请求体为 `targetId` 和 `sourceIds`，合并后重新计算使用次数。
+
+### 13.3 后台数据看板
+
+- `GET /api/v1/admin/dashboard`：reviewer/admin；返回基础统计和 30 天趋势。
+
+### 13.4 举报处理增强
+
+- `POST /api/v1/admin/reports/{id}/resolve` 请求体新增 `archiveArticle?: boolean`。
+- 当 `status = "resolved"` 且 `archiveArticle = true` 时，后端在同一事务中标记举报已处理并将文章下架。
+- 当 `status = "rejected"` 时，不允许传 `archiveArticle = true`。
+
+### 13.5 搜索语义
+
+- `GET /api/v1/articles?q=...` 已升级为 PostgreSQL full text search。
+- 搜索范围：`title + summary + content_md`。
+- 有关键词时按相关度优先，再按发布时间兜底；无关键词时保留 `latest`、`hot`、`random`。

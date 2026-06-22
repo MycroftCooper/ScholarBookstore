@@ -36,9 +36,10 @@ export function resolveReport(
   id: number,
   status: "resolved" | "rejected",
   note: string,
+  archiveArticle = false,
 ) {
   return apiRequest<ArticleReport>(`/admin/reports/${id}/resolve`, {
     method: "POST",
-    body: JSON.stringify({ status, note }),
+    body: JSON.stringify({ status, note, archiveArticle }),
   });
 }
