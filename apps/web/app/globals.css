@@ -4,6 +4,32 @@
 
 :root {
   color-scheme: light;
+  --color-page: #f8f7f2;
+  --color-surface: rgba(255, 255, 255, 0.76);
+  --color-surface-solid: #ffffff;
+  --color-ink: #171b22;
+  --color-muted: #696f79;
+  --color-faint: #e6e1d8;
+  --color-line: rgba(38, 44, 53, 0.14);
+  --color-accent: #f2c200;
+  --color-accent-strong: #d8a900;
+  --color-code: #ffffff;
+  --shadow-soft: 0 22px 70px rgba(31, 41, 51, 0.11);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-page: #111418;
+  --color-surface: rgba(25, 29, 35, 0.78);
+  --color-surface-solid: #191d23;
+  --color-ink: #f4f1e8;
+  --color-muted: #abb0b8;
+  --color-faint: #323842;
+  --color-line: rgba(244, 241, 232, 0.14);
+  --color-accent: #f2c200;
+  --color-accent-strong: #ffd84d;
+  --color-code: #171b22;
+  --shadow-soft: 0 22px 70px rgba(0, 0, 0, 0.34);
 }
 
 * {
@@ -12,8 +38,9 @@
 
 body {
   margin: 0;
-  background: #f7f4ed;
-  color: #1f2933;
+  min-width: 320px;
+  background: var(--color-page);
+  color: var(--color-ink);
 }
 
 button,
@@ -27,5 +54,107 @@ a {
 }
 
 ::selection {
-  background: #d6eadc;
+  background: rgba(242, 194, 0, 0.28);
+}
+
+.contour-map {
+  position: absolute;
+  inset: -12% -8%;
+  z-index: -1;
+  overflow: hidden;
+  color: var(--color-line);
+  opacity: 0.98;
+  pointer-events: none;
+}
+
+.contour-map svg {
+  width: 118%;
+  height: 118%;
+  transform: translate3d(-5%, -4%, 0);
+}
+
+.contour-cluster {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: contour-drift 28s ease-in-out infinite alternate;
+}
+
+.contour-cluster-b,
+.contour-cluster-d {
+  animation-duration: 34s;
+  animation-delay: -9s;
+}
+
+.contour-cluster-c,
+.contour-cluster-e {
+  animation-duration: 39s;
+  animation-delay: -15s;
+}
+
+.contour-ridges {
+  opacity: 0.55;
+  animation-duration: 44s;
+}
+
+.contour-path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.contour-loop {
+  opacity: 0.72;
+}
+
+.contour-loop:nth-child(2n) {
+  opacity: 0.62;
+}
+
+.contour-loop:nth-child(3n) {
+  opacity: 0.5;
+}
+
+.contour-loop:nth-child(4n) {
+  opacity: 0.38;
+}
+
+.contour-loop:nth-child(5n) {
+  opacity: 0.32;
+}
+
+.contour-loop:nth-child(6n) {
+  opacity: 0.28;
+}
+
+.contour-ridge {
+  opacity: 0.3;
+}
+
+.contour-cut {
+  opacity: 0.12;
+  stroke-dasharray: 2 14;
+}
+
+.contour-dots {
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 16px 16px;
+  mask-image: linear-gradient(90deg, transparent, black 10%, transparent 30%, transparent 70%, black 90%, transparent);
+}
+
+@keyframes contour-drift {
+  from {
+    transform: translate3d(-8px, -5px, 0) rotate(-0.3deg);
+  }
+  to {
+    transform: translate3d(14px, 10px, 0) rotate(0.35deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contour-cluster {
+    animation: none;
+  }
 }

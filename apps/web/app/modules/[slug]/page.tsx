@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArticleList } from "@/components/content/ArticleList";
-import { SiteHeader } from "@/components/layout/SiteHeader";
-import { getModule, type ModuleSummary } from "@/lib/api/modules";
+import { SiteFrame } from "@/components/layout/SiteFrame";
 import { ApiError } from "@/lib/api/client";
+import { getModule, type ModuleSummary } from "@/lib/api/modules";
 
 export default function ModuleDetailPage() {
   const params = useParams<{ slug: string }>();
@@ -19,63 +19,68 @@ export default function ModuleDetailPage() {
       return;
     }
 
+    setLoading(true);
+    setError("");
     getModule(params.slug)
       .then(setModule)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) {
-          setError("版块不存在或已停用");
+          setError("\u7248\u5757\u4e0d\u5b58\u5728\u6216\u5df2\u505c\u7528");
           return;
         }
-        setError("版块加载失败，请稍后重试");
+        setError("\u7248\u5757\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5");
       })
       .finally(() => setLoading(false));
   }, [params.slug]);
 
   return (
-    <main className="min-h-screen bg-paper">
-      <SiteHeader />
-      <section className="mx-auto max-w-5xl px-4 py-10 md:py-14">
+    <SiteFrame>
+      <section className="relative mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-10 lg:px-8">
         <Link
-          href="/"
-          className="text-sm font-medium text-moss underline-offset-4 hover:underline"
+          href="/modules"
+          className="text-sm font-semibold text-[var(--color-muted)] hover:text-[var(--color-ink)]"
         >
-          返回主页
+          &lt;- {"\u8fd4\u56de\u5168\u90e8\u9886\u57df"}
         </Link>
 
         {loading && (
-          <div className="mt-6 rounded-lg border border-stone-200 bg-white p-6 text-stone-600">
-            正在加载版块...
+          <div className="mt-6 border border-[var(--color-line)] bg-[var(--color-surface)] p-6 text-[var(--color-muted)]">
+            {"\u6b63\u5728\u52a0\u8f7d\u7248\u5757..."}
           </div>
         )}
 
         {error && (
-          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-6 text-red-700">
+          <div className="mt-6 border border-red-300 bg-red-50 p-6 text-red-700">
             {error}
           </div>
         )}
 
         {module && (
           <div className="mt-6 grid gap-5">
-            <section className="rounded-lg border border-stone-200 bg-white p-6 shadow-soft">
-              <p className="text-sm font-medium text-brass">{module.slug}</p>
-              <h1 className="mt-2 text-3xl font-semibold text-ink">
+            <section className="border border-[var(--color-line)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-soft)] md:p-8">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-accent-strong)]">
+                {module.domainName} / {module.slug}
+              </p>
+              <h1 className="mt-3 text-4xl font-semibold leading-tight text-[var(--color-ink)] md:text-5xl">
                 {module.name}
               </h1>
               {module.description && (
-                <p className="mt-4 max-w-3xl text-base leading-7 text-stone-600">
+                <p className="mt-4 max-w-3xl text-base leading-8 text-[var(--color-muted)]">
                   {module.description}
                 </p>
               )}
             </section>
 
-            <section className="rounded-lg border border-stone-200 bg-white p-6">
+            <section className="border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold text-ink">文章</h2>
+                <h2 className="text-lg font-semibold text-[var(--color-ink)]">
+                  {"\u6587\u7ae0"}
+                </h2>
                 <Link
                   href="/me/submit"
-                  className="rounded-md bg-moss px-4 py-2 text-sm font-medium text-white hover:bg-[#354f42]"
+                  className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[#171717] hover:bg-[var(--color-accent-strong)]"
                 >
-                  投稿
+                  {"\u6295\u7a3f"}
                 </Link>
               </div>
               <div className="mt-4">
@@ -85,6 +90,6 @@ export default function ModuleDetailPage() {
           </div>
         )}
       </section>
-    </main>
+    </SiteFrame>
   );
 }

@@ -48,7 +48,7 @@ export async function apiRequest<T>(
     throw new ApiError(
       response.status,
       errorBody.error?.code ?? "UNKNOWN_ERROR",
-      errorBody.error?.message ?? "请求失败",
+      errorBody.error?.message ?? "\u8bf7\u6c42\u5931\u8d25",
     );
   }
 

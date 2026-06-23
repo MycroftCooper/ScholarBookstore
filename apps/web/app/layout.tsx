@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ScholarBookstore",
-  description: "知识库社区网站",
+  title: "GameScholarBookstore",
+  description:
+    "\u9762\u5411\u6e38\u620f\u7814\u7a76\u4e0e\u5f00\u53d1\u5b9e\u8df5\u7684\u77e5\u8bc6\u5e93\u793e\u533a\u7f51\u7ad9",
 };
 
 export default function RootLayout({
