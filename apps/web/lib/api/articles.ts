@@ -10,6 +10,7 @@ export type ArticleSummary = {
   title: string;
   summary: string;
   contentMd?: string;
+  sourceType: "original" | "reprint";
   status: "draft" | "pending_review" | "published" | "rejected" | "archived";
   reviewNote?: string;
   publishedAt: string | null;
@@ -18,6 +19,7 @@ export type ArticleSummary = {
   readingMinutes: number;
   viewCount: number;
   revisionCount: number;
+  isFeatured: boolean;
   tags: ArticleTag[] | null;
   createdAt: string;
   updatedAt: string;
@@ -42,6 +44,7 @@ export type ArticleListParams = {
   tag?: string;
   sort?: "latest" | "hot" | "random";
   pageSize?: number;
+  featured?: boolean;
 };
 
 export async function listArticles(input: ArticleListParams = {}) {
@@ -61,6 +64,9 @@ export async function listArticles(input: ArticleListParams = {}) {
   if (input.pageSize) {
     params.set("pageSize", String(input.pageSize));
   }
+  if (input.featured) {
+    params.set("featured", "true");
+  }
   const query = params.toString();
   return apiRequest<ArticleSummary[]>(`/articles${query ? `?${query}` : ""}`);
 }
@@ -74,6 +80,7 @@ export function createArticle(input: {
   title: string;
   summary: string;
   contentMd: string;
+  sourceType?: ArticleSummary["sourceType"];
   status?: "draft" | "pending_review";
   tags?: string[];
 }) {
@@ -102,6 +109,7 @@ export function updateMyArticle(
     title: string;
     summary: string;
     contentMd: string;
+    sourceType?: ArticleSummary["sourceType"];
     status?: "draft" | "pending_review";
     tags?: string[];
   },
@@ -150,5 +158,17 @@ export function archiveArticle(id: number) {
 export function restoreArticle(id: number) {
   return apiRequest<ArticleSummary>(`/admin/articles/${id}/restore`, {
     method: "POST",
+  });
+}
+
+export function updateAdminArticle(
+  id: number,
+  input: {
+    isFeatured?: boolean;
+  },
+) {
+  return apiRequest<ArticleSummary>(`/admin/articles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
   });
 }

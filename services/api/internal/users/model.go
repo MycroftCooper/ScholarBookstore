@@ -65,6 +65,8 @@ type AuthorArticle struct {
 	Title          string     `json:"title"`
 	Summary        string     `json:"summary"`
 	Status         string     `json:"status"`
+	ViewCount      int64      `json:"viewCount"`
+	BookmarkCount  int64      `json:"bookmarkCount"`
 	PublishedAt    *time.Time `json:"publishedAt"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
@@ -80,6 +82,7 @@ type PublicAuthorProfile struct {
 	PublishedArticleCount int64           `json:"publishedArticleCount"`
 	FollowersCount        int64           `json:"followersCount"`
 	FollowingCount        int64           `json:"followingCount"`
+	BookmarkCount         int64           `json:"bookmarkCount"`
 	Articles              []AuthorArticle `json:"articles"`
 }
 

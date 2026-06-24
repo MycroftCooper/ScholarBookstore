@@ -953,7 +953,7 @@
 - 登录：否
 - 角色：guest、user、reviewer、admin
 
-响应：作者公开信息（头像、用户名、bio、学校、公司、已发布文章数、关注者数、正在关注数），以及已发布文章列表（分页）。
+响应：作者公开信息（头像、用户名、bio、学校、公司、已发布文章数、关注者数、正在关注数、作者文章被收藏总数），以及已发布文章列表（分页）。文章列表额外返回每篇文章的浏览量和收藏数，用于作者主页热门文章与收藏排序展示。
 
 查询参数：
 
@@ -1207,3 +1207,67 @@
 - 后端新增 HTTP 冒烟测试，覆盖真实 router、cookie 鉴权、admin/reviewer 权限、文章审核发布、搜索、Tag、举报处理、评论、收藏、关注、通知入口。
 - 统一验证入口：`powershell -ExecutionPolicy Bypass -File scripts\verify.ps1`。
 - 若设置 `TEST_DATABASE_URL`，routes smoke tests 会连接真实 PostgreSQL 测试库；未设置时数据库冒烟用例自动跳过。
+
+## 15. 2026-06-24 文章精选补充
+
+### 15.1 公开文章列表精选筛选
+
+- `GET /api/v1/articles?featured=true`
+- 登录：否
+- 行为：仅返回 `published`、未删除且 `isFeatured = true` 的文章；可与 `moduleSlug`、`q`、`tag`、`sort`、`page`、`pageSize` 组合使用。
+- 响应：文章对象新增 `isFeatured: boolean`。
+
+### 15.2 后台设置文章精选状态
+
+- `PATCH /api/v1/admin/articles/{id}`
+- 登录：是
+- 权限：admin、文章所属领域的领域主、文章所属版块的版主。
+- 请求：`{ "isFeatured": true }` 或 `{ "isFeatured": false }`
+- 响应：更新后的文章对象，包含 `isFeatured`。
+- 错误：`VALIDATION_ERROR`、`NOT_FOUND`、`FORBIDDEN`。
+
+## 16. 2026-06-24 领域主与版主权限补充
+
+### 16.1 文章审核与精选权限
+
+- `GET /api/v1/admin/articles`：登录后可访问；admin 返回全部文章，领域主仅返回其领域下文章，版主仅返回其版块下文章，普通用户返回空列表。
+- `GET /api/v1/admin/articles/reviews`：同上，仅返回当前用户有权审核范围内的待审核文章。
+- `POST /api/v1/admin/articles/{id}/approve` / `reject`：仅 admin、文章所属领域的领域主、文章所属版块的版主可操作。
+- `PATCH /api/v1/admin/articles/{id}`：用于更新 `isFeatured`；仅 admin、文章所属领域的领域主、文章所属版块的版主可操作。
+- `reviewer` 不再天然拥有文章审核或精选权限；除 admin 外必须通过 `domain_owners` 或 `module_moderators` 获得 scoped 权限。
+
+### 16.2 版块管理权限
+
+- `POST /api/v1/admin/modules`：admin 或目标领域的领域主可新增版块。
+- `PATCH /api/v1/admin/modules/{id}`：admin 或版块所属领域的领域主可修改版块信息；非 admin 不允许迁移 `domainId`。
+- `DELETE /api/v1/admin/modules/{id}`：admin 或版块所属领域的领域主可软删除版块。
+- `POST /api/v1/admin/modules/{id}/moderators`：请求 `{ "userId": 123 }`，admin 或版块所属领域的领域主可指定版主。
+- `DELETE /api/v1/admin/modules/{id}/moderators/{userId}`：admin 或版块所属领域的领域主可移除版主。
+
+### 16.3 领域主指定接口
+
+- `POST /api/v1/admin/domains/{id}/owners`：admin only；请求 `{ "userId": 123 }`，将用户指定为该领域的领域主。
+- `DELETE /api/v1/admin/domains/{id}/owners/{userId}`：admin only；移除该领域主身份。
+- 领域主身份存储在 `domain_owners`，不使用 `users.role`；一个用户可以是多个领域的领域主。
+
+### 16.4 删除版块后的文章处理
+
+- `DELETE /api/v1/admin/modules/{id}` 不物理删除文章。
+- 后端在同一事务中软删除或停用版块，并将该版块下所有未删除文章设置为 `archived`。
+- 删除版块后，公开文章列表和详情不会返回该版块文章；后续重新上架必须显式处理。
+
+## 17. 2026-06-24 文章来源类型补充
+
+- Article 返回体新增 `sourceType`：`original` 表示原创，`reprint` 表示转载。
+- `POST /api/v1/articles` 和 `PATCH /api/v1/articles/{id}` 支持可选 `sourceType`，不传默认 `original`。
+- 文章详情页的“文章信息”应展示原创或转载，不再展示协议字段。
+
+## 18. 2026-06-25 收藏夹补充
+
+- 收藏对象仅面向文章，不收藏版块、领域或作者。
+- `POST /api/v1/articles/{id}/bookmark` 支持可选 `collectionId`，用于选择收藏进哪个收藏夹；为空时使用默认收藏夹。
+- `GET /api/v1/me/bookmark-collections` 返回当前用户收藏夹列表，首次调用时后端会自动创建默认收藏夹。
+- `POST /api/v1/me/bookmark-collections` 创建收藏夹。
+- `PATCH /api/v1/me/bookmark-collections/{id}` 重命名收藏夹。
+- `DELETE /api/v1/me/bookmark-collections/{id}` 删除非默认收藏夹，夹内收藏转移到默认收藏夹。
+- `PATCH /api/v1/me/bookmarks/{id}` 将已有收藏移动到其他收藏夹。

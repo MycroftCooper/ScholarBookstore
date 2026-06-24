@@ -443,3 +443,32 @@
 - 管理后台可查看软删除内容，TODO：是否提供恢复功能后续确认。
 - 删除操作默认写入 `deleted_at`，不执行物理删除。
 - 用户上传文件的物理删除由运维清理任务或人工处理，第一版不自动清理。
+
+## 2026-06-24 补充：文章精选字段
+
+- `articles` 新增 `is_featured boolean not null default false`。
+- 新增索引：`articles_featured_published_idx on articles (is_featured, published_at desc, id desc) where deleted_at is null and status = 'published'`。
+- `is_featured` 由 reviewer/admin 在后台维护，用于领域详情、版块详情等页面的精选文章展示。
+- 公开精选列表必须同时满足 `status = 'published'`、`deleted_at is null` 和 `is_featured = true`。
+
+## 2026-06-24 补充：领域主与版主关系表
+
+- 新增 `domain_owners(domain_id, user_id, created_at)`，主键为 `(domain_id, user_id)`，表示用户是某个领域的领域主。
+- 新增索引 `domain_owners_user_idx on domain_owners(user_id, domain_id)`，用于按用户查询可管理领域。
+- 新增 `module_moderators(module_id, user_id, created_at)`，主键为 `(module_id, user_id)`，表示用户是某个版块的版主。
+- 新增索引 `module_moderators_user_idx on module_moderators(user_id, module_id)`，用于按用户查询可管理版块。
+- 领域主和版主是 scoped 角色，不写入 `users.role`；`users.role` 仍保留全站 `user/reviewer/admin`。
+- `articles.is_featured` 现在由 admin、文章所属领域的领域主、文章所属版块的版主维护。
+
+## 2026-06-24 补充：版块删除与文章下架
+
+- 删除版块必须使用软删除：`modules.is_active = false` 且写入 `deleted_at`。
+- 删除版块时不得级联删除文章；同一事务内将该版块下所有未删除文章设置为 `status = 'archived'`，作为下架处理。
+- 公开文章列表、文章详情、阅读量递增都必须过滤已删除或停用版块，避免历史异常数据继续公开。
+- 文章重新上架必须在版块重新整理完成后，通过后续审核或恢复流程显式执行。
+
+## 2026-06-24 补充：文章来源类型
+
+- `articles` 新增 `source_type varchar(20) not null default 'original'`。
+- 允许值：`original` 表示原创，`reprint` 表示转载。
+- 文章详情页的“文章信息”展示该字段，不再使用许可协议占位。

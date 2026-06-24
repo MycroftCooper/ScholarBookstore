@@ -85,30 +85,33 @@ export function HomeOverview() {
         <HeroConsole />
       </section>
 
-      <section className="relative mx-auto max-w-7xl px-4 pb-8 md:px-6 lg:px-8">
-        <div className="flex items-center justify-between border-y border-[var(--color-line)] py-4">
-          <h2 className="text-sm font-semibold text-[var(--color-ink)]">{"\u6700\u65b0\u6587\u7ae0"}</h2>
-          <Link href="/discover" className="text-sm text-[var(--color-muted)] hover:text-[var(--color-ink)]">
-            {"\u67e5\u770b\u5168\u90e8"} -&gt;
-          </Link>
-        </div>
-        {loading ? (
-          <LoadingPanel text="\u6b63\u5728\u52a0\u8f7d\u6587\u7ae0..." />
-        ) : overview.featured.length > 0 ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {overview.featured.map((article) => (
-              <ArticleCard key={article.id} article={article} />
-            ))}
-          </div>
-        ) : (
-          <EmptyPanel text="\u6682\u65e0\u5df2\u53d1\u5e03\u6587\u7ae0" />
-        )}
+      <section className="relative mx-auto grid max-w-7xl gap-4 px-4 pb-8 md:grid-cols-[0.95fr_0.85fr_0.8fr] md:px-6 lg:px-8">
+        <ModulePanel modules={overview.modules} loading={loading} />
+        <HotModulePanel modules={overview.modules} loading={loading} />
+        <CreatorPanel creators={overview.creators} loading={loading} />
       </section>
 
-      <section className="relative mx-auto grid max-w-7xl gap-4 px-4 pb-10 md:grid-cols-[0.95fr_0.85fr_0.8fr] md:px-6 lg:px-8">
-        <ModulePanel modules={overview.modules} loading={loading} />
-        <DiscussionPanel discussions={overview.hotDiscussions} loading={loading} />
-        <CreatorPanel creators={overview.creators} loading={loading} />
+      <section className="relative mx-auto grid max-w-7xl gap-4 px-4 pb-10 lg:grid-cols-[minmax(0,1fr)_320px] md:px-6 lg:px-8">
+        <section className="border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-[var(--color-ink)]">{"\u6700\u65b0\u6587\u7ae0"}</h2>
+            <Link href="/discover" className="text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)]">
+              {"\u67e5\u770b\u5168\u90e8"} -&gt;
+            </Link>
+          </div>
+          {loading ? (
+            <LoadingPanel text="\u6b63\u5728\u52a0\u8f7d\u6587\u7ae0..." compact />
+          ) : overview.featured.length > 0 ? (
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {overview.featured.slice(0, 6).map((article) => (
+                <ArticleCard key={article.id} article={article} />
+              ))}
+            </div>
+          ) : (
+            <EmptyPanel text="\u6682\u65e0\u5df2\u53d1\u5e03\u6587\u7ae0" compact />
+          )}
+        </section>
+        <HotArticlePanel articles={overview.hotDiscussions} loading={loading} />
       </section>
     </div>
   );
@@ -232,7 +235,7 @@ function ModulePanel({
     <section className="border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[var(--color-ink)]">{"\u77e5\u8bc6\u9886\u57df"}</h2>
-        <Link href="/modules" className="text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)]">
+        <Link href="/domain" className="text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)]">
           {"\u5168\u90e8\u9886\u57df"} -&gt;
         </Link>
       </div>
@@ -260,40 +263,82 @@ function ModulePanel({
   );
 }
 
-function DiscussionPanel({
-  discussions,
+function HotModulePanel({
+  modules,
   loading,
 }: {
-  discussions: HomeDiscussion[];
+  modules: HomeModuleInsight[];
   loading: boolean;
 }) {
+  const hotModules = [...modules].sort((a, b) => b.articleCount - a.articleCount).slice(0, 5);
   return (
     <section className="border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-[var(--color-ink)]">{"\u70ed\u95e8\u8ba8\u8bba"}</h2>
-        <span className="text-xs text-[var(--color-muted)]">LIVE</span>
+        <h2 className="text-sm font-semibold text-[var(--color-ink)]">热门版块</h2>
+        <Link href="/domain" className="text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)]">
+          全部版块 -&gt;
+        </Link>
       </div>
       {loading ? (
-        <LoadingPanel text="\u6b63\u5728\u52a0\u8f7d\u8ba8\u8bba..." compact />
-      ) : discussions.length > 0 ? (
+        <LoadingPanel text="正在加载版块..." compact />
+      ) : hotModules.length > 0 ? (
         <div className="mt-4 grid gap-3">
-          {discussions.map((discussion) => (
+          {hotModules.map((module, index) => (
             <Link
-              key={discussion.articleId}
-              href={`/articles/${discussion.articleId}`}
+              key={module.id}
+              href={`/modules/${module.slug}`}
               className="grid grid-cols-[1fr_auto] gap-3 border-b border-[var(--color-line)] pb-3 last:border-b-0"
             >
               <span className="text-sm font-medium leading-6 text-[var(--color-ink)]">
-                {discussion.articleTitle}
+                {index + 1}. {module.name}
               </span>
               <span className="rounded-sm bg-[var(--color-accent)] px-2 py-1 text-xs font-semibold text-[#171717]">
-                {discussion.commentCount}
+                {module.articleCount}
               </span>
             </Link>
           ))}
         </div>
       ) : (
-        <EmptyPanel text="\u6682\u65e0\u516c\u5f00\u8ba8\u8bba" compact />
+        <EmptyPanel text="暂无热门版块" compact />
+      )}
+    </section>
+  );
+}
+
+function HotArticlePanel({
+  articles,
+  loading,
+}: {
+  articles: HomeDiscussion[];
+  loading: boolean;
+}) {
+  return (
+    <section className="border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-[var(--color-ink)]">热门文章</h2>
+        <Link href="/discover" className="text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)]">
+          查看更多 -&gt;
+        </Link>
+      </div>
+      {loading ? (
+        <LoadingPanel text="正在加载热门文章..." compact />
+      ) : articles.length > 0 ? (
+        <div className="mt-4 grid gap-3">
+          {articles.map((article) => (
+            <Link
+              key={article.articleId}
+              href={`/articles/${article.articleId}`}
+              className="border-b border-[var(--color-line)] pb-3 last:border-b-0"
+            >
+              <span className="block text-sm font-medium leading-6 text-[var(--color-ink)]">
+                {article.articleTitle}
+              </span>
+              <span className="mt-1 block text-xs text-[var(--color-muted)]">{article.moduleName}</span>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <EmptyPanel text="暂无热门文章" compact />
       )}
     </section>
   );
@@ -316,15 +361,24 @@ function CreatorPanel({
         <LoadingPanel text="\u6b63\u5728\u52a0\u8f7d\u521b\u4f5c\u8005..." compact />
       ) : creators.length > 0 ? (
         <div className="mt-4 grid gap-3">
-          {creators.map((creator) => (
-            <div key={creator.id} className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-[var(--color-ink)]">{creator.username}</div>
-                <div className="mt-1 text-xs text-[var(--color-muted)]">
+          {creators.map((creator, index) => (
+            <Link
+              key={creator.id}
+              href={`/authors/${creator.username}`}
+              className="grid grid-cols-[1fr_auto] gap-3 border-b border-[var(--color-line)] pb-3 last:border-b-0"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium leading-6 text-[var(--color-ink)]">
+                  {index + 1}. {creator.username}
+                </span>
+                <span className="mt-1 block text-xs text-[var(--color-muted)]">
                   {"\u6587\u7ae0"} {creator.publishedCount}
-                </div>
-              </div>
-            </div>
+                </span>
+              </span>
+              <span className="h-fit rounded-sm bg-[var(--color-accent)] px-2 py-1 text-xs font-semibold text-[#171717]">
+                {creator.commentCount}
+              </span>
+            </Link>
           ))}
         </div>
       ) : (

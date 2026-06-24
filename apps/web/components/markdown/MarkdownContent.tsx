@@ -18,14 +18,14 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     uniqueSlug(extractText(children), slugCounts);
 
   return (
-    <div className="markdown-content text-base leading-8 text-stone-800">
+    <div className="markdown-content text-base leading-8 text-[var(--color-ink)]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
             <h1
               id={nextHeadingId(children)}
-              className="scroll-mt-24 mb-4 mt-8 text-3xl font-semibold leading-tight text-ink"
+              className="scroll-mt-24 mb-4 mt-8 text-3xl font-semibold leading-tight text-[var(--color-ink)]"
             >
               {children}
             </h1>
@@ -33,7 +33,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
           h2: ({ children }) => (
             <h2
               id={nextHeadingId(children)}
-              className="scroll-mt-24 mb-3 mt-7 text-2xl font-semibold leading-tight text-ink"
+              className="scroll-mt-24 mb-3 mt-7 text-2xl font-semibold leading-tight text-[var(--color-ink)]"
             >
               {children}
             </h2>
@@ -41,7 +41,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
           h3: ({ children }) => (
             <h3
               id={nextHeadingId(children)}
-              className="scroll-mt-24 mb-2 mt-6 text-xl font-semibold leading-tight text-ink"
+              className="scroll-mt-24 mb-2 mt-6 text-xl font-semibold leading-tight text-[var(--color-ink)]"
             >
               {children}
             </h3>
@@ -50,7 +50,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
           a: ({ href, children }) => (
             <a
               href={href}
-              className="font-medium text-moss underline underline-offset-4"
+              className="font-medium text-[var(--color-accent-strong)] underline underline-offset-4"
               rel="noreferrer"
               target={href?.startsWith("http") ? "_blank" : undefined}
             >
@@ -64,7 +64,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
             <ol className="my-4 list-decimal space-y-2 pl-6">{children}</ol>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="my-5 border-l-4 border-moss/40 bg-stone-50 px-4 py-2 text-stone-700">
+            <blockquote className="my-5 border-l-4 border-[var(--color-accent-strong)] bg-[var(--color-surface-solid)] px-4 py-2 text-[var(--color-muted)]">
               {children}
             </blockquote>
           ),
@@ -72,13 +72,13 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
             const isBlock = className?.startsWith("language-");
             if (isBlock) {
               return (
-                <code className="block overflow-x-auto rounded-md bg-stone-900 px-4 py-3 font-mono text-sm leading-6 text-stone-100">
+                  <code className="block overflow-x-auto rounded-md bg-[var(--color-code)] px-4 py-3 font-mono text-sm leading-6 text-[var(--color-ink)]">
                   {children}
                 </code>
               );
             }
             return (
-              <code className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-sm text-stone-900">
+              <code className="rounded bg-[var(--color-surface-solid)] px-1.5 py-0.5 font-mono text-sm text-[var(--color-ink)]">
                 {children}
               </code>
             );
@@ -90,12 +90,12 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
             </div>
           ),
           th: ({ children }) => (
-            <th className="border border-stone-300 bg-stone-100 px-3 py-2 text-left font-semibold">
+            <th className="border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-3 py-2 text-left font-semibold">
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="border border-stone-300 px-3 py-2 align-top">
+            <td className="border border-[var(--color-line)] px-3 py-2 align-top">
               {children}
             </td>
           ),

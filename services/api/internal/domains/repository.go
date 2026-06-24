@@ -157,6 +157,43 @@ func (r *Repository) Update(ctx context.Context, id int64, input UpdateDomainInp
 	return r.FindByID(ctx, updatedID, true)
 }
 
+func (r *Repository) AddOwner(ctx context.Context, domainID int64, userID int64) (DomainOwner, error) {
+	const query = `
+		insert into domain_owners (domain_id, user_id)
+		select $1, $2
+		where exists (select 1 from domains where id = $1 and deleted_at is null)
+			and exists (select 1 from users where id = $2 and status = 'active' and deleted_at is null)
+		on conflict (domain_id, user_id) do update set user_id = excluded.user_id
+		returning domain_id, user_id, created_at
+	`
+	var item DomainOwner
+	err := r.db.QueryRow(ctx, query, domainID, userID).Scan(&item.DomainID, &item.UserID, &item.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DomainOwner{}, ErrNotFound
+	}
+	if err != nil {
+		return DomainOwner{}, fmt.Errorf("add domain owner: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) RemoveOwner(ctx context.Context, domainID int64, userID int64) error {
+	const query = `
+		delete from domain_owners
+		where domain_id = $1 and user_id = $2
+		returning domain_id
+	`
+	var removedID int64
+	err := r.db.QueryRow(ctx, query, domainID, userID).Scan(&removedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("remove domain owner: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) findOne(ctx context.Context, query string, args ...interface{}) (Domain, error) {
 	item, err := scanDomain(r.db.QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {

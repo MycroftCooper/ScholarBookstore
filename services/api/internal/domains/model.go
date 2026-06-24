@@ -40,6 +40,12 @@ type PublicDomain struct {
 	Modules     []DomainModule `json:"modules,omitempty"`
 }
 
+type DomainOwner struct {
+	DomainID  int64     `json:"domainId"`
+	UserID    int64     `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type CreateDomainInput struct {
 	Slug        string
 	Name        string

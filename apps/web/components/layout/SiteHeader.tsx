@@ -10,7 +10,7 @@ import { unreadNotificationCount } from "@/lib/api/notifications";
 
 const navItems = [
   { href: "/", label: "\u9996\u9875" },
-  { href: "/modules", label: "\u9886\u57df" },
+  { href: "/domain", label: "\u9886\u57df" },
   { href: "/discover", label: "\u53d1\u73b0" },
 ];
 

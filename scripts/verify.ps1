@@ -27,4 +27,4 @@ if (-not $SkipWeb) {
   }
 }
 
-& (Join-Path $PSScriptRoot "check-encoding.ps1")
+node (Join-Path $PSScriptRoot "check-encoding.mjs")

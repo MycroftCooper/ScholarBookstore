@@ -50,11 +50,34 @@ func (r *fakeModuleRepo) Update(_ context.Context, id int64, input UpdateModuleI
 	return Module{ID: id, DomainID: 1, DomainSlug: "backend", DomainName: "后端开发", Slug: "database", Name: name, IsActive: true}, nil
 }
 
+func (r *fakeModuleRepo) Delete(_ context.Context, id int64) error {
+	if id != 1 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *fakeModuleRepo) FindByID(_ context.Context, id int64) (Module, error) {
 	if id != 1 {
 		return Module{}, ErrNotFound
 	}
 	return Module{ID: id, DomainID: 1, DomainSlug: "backend", DomainName: "后端开发", Slug: "database", Name: "数据库", IsActive: true}, nil
+}
+
+func (r *fakeModuleRepo) CanManageDomain(_ context.Context, _ int64, _ string, _ int64) (bool, error) {
+	return true, nil
+}
+
+func (r *fakeModuleRepo) CanManageModule(_ context.Context, _ int64, _ string, _ int64) (bool, error) {
+	return true, nil
+}
+
+func (r *fakeModuleRepo) AddModerator(_ context.Context, moduleID int64, userID int64) (ModuleModerator, error) {
+	return ModuleModerator{ModuleID: moduleID, UserID: userID}, nil
+}
+
+func (r *fakeModuleRepo) RemoveModerator(_ context.Context, _ int64, _ int64) error {
+	return nil
 }
 
 func TestCreateNormalizesAndValidatesInput(t *testing.T) {

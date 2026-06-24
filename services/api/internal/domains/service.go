@@ -13,6 +13,8 @@ type DomainRepository interface {
 	FindByID(ctx context.Context, id int64, includeInactive bool) (Domain, error)
 	Create(ctx context.Context, input CreateDomainInput) (Domain, error)
 	Update(ctx context.Context, id int64, input UpdateDomainInput) (Domain, error)
+	AddOwner(ctx context.Context, domainID int64, userID int64) (DomainOwner, error)
+	RemoveOwner(ctx context.Context, domainID int64, userID int64) error
 }
 
 type Service struct {
@@ -79,6 +81,20 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateDomainInput)
 		return PublicDomain{}, err
 	}
 	return ToPublic(item, true), nil
+}
+
+func (s *Service) AddOwner(ctx context.Context, domainID int64, userID int64) (DomainOwner, error) {
+	if domainID <= 0 || userID <= 0 {
+		return DomainOwner{}, ErrInvalidInput
+	}
+	return s.repo.AddOwner(ctx, domainID, userID)
+}
+
+func (s *Service) RemoveOwner(ctx context.Context, domainID int64, userID int64) error {
+	if domainID <= 0 || userID <= 0 {
+		return ErrInvalidInput
+	}
+	return s.repo.RemoveOwner(ctx, domainID, userID)
 }
 
 func validSlug(slug string) bool {

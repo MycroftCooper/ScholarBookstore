@@ -47,11 +47,12 @@ func TestSmokeHealthAuthAndAdminPermissions(t *testing.T) {
 func TestSmokePublishingSearchTagsReportsAndSocialFlow(t *testing.T) {
 	env := testutil.NewSmokeEnv(t)
 	env.SeedUser("admin", "admin@example.test", "admin", "active", "password123")
-	env.SeedUser("reviewer", "reviewer@example.test", "reviewer", "active", "password123")
+	reviewerID := env.SeedUser("reviewer", "reviewer@example.test", "reviewer", "active", "password123")
 	env.SeedUser("author", "author@example.test", "user", "active", "password123")
 	env.SeedUser("reader", "reader@example.test", "user", "active", "password123")
 	domainID := env.SeedDomain("science", "Science")
 	moduleID := env.SeedModule(domainID, "physics", "Physics")
+	env.SeedModuleModerator(moduleID, reviewerID)
 
 	authorCookie := env.Login("author@example.test", "password123")
 	reviewerCookie := env.Login("reviewer@example.test", "password123")
@@ -176,4 +177,27 @@ func TestSmokePublishingSearchTagsReportsAndSocialFlow(t *testing.T) {
 		"status":         "resolved",
 		"archiveArticle": true,
 	}, reviewerCookie), http.StatusConflict, "CONFLICT")
+
+	moduleToDeleteID := env.SeedModule(domainID, "temporary", "Temporary")
+	env.SeedModuleModerator(moduleToDeleteID, reviewerID)
+	createTemporaryArticle := env.Request(http.MethodPost, "/api/v1/articles", map[string]interface{}{
+		"moduleId":  moduleToDeleteID,
+		"title":     "Temporary Notes",
+		"summary":   "Temporary module article",
+		"contentMd": "This article should be archived when its module is deleted.",
+		"status":    "pending_review",
+	}, authorCookie)
+	testutil.AssertStatus(t, createTemporaryArticle, http.StatusCreated)
+	var temporaryArticle struct {
+		ID int64 `json:"id"`
+	}
+	createTemporaryArticle.DecodeData(t, &temporaryArticle)
+	testutil.AssertStatus(t, env.Request(http.MethodPost, fmt.Sprintf("/api/v1/admin/articles/%d/approve", temporaryArticle.ID), map[string]string{
+		"reviewNote": "ok",
+	}, reviewerCookie), http.StatusOK)
+	testutil.AssertStatus(t, env.Request(http.MethodDelete, fmt.Sprintf("/api/v1/admin/modules/%d", moduleToDeleteID), nil, adminCookie), http.StatusOK)
+	if got := env.ArticleStatus(temporaryArticle.ID); got != "archived" {
+		t.Fatalf("article status after module delete = %q, want archived", got)
+	}
+	testutil.AssertErrorCode(t, env.Request(http.MethodGet, fmt.Sprintf("/api/v1/articles/%d", temporaryArticle.ID), nil), http.StatusNotFound, "NOT_FOUND")
 }

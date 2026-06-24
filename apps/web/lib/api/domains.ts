@@ -13,6 +13,12 @@ export type DomainSummary = {
   modules?: ModuleSummary[];
 };
 
+export type DomainOwner = {
+  domainId: number;
+  userId: number;
+  createdAt: string;
+};
+
 export function listDomains(includeInactive = false) {
   return apiRequest<DomainSummary[]>(
     `/domains${includeInactive ? "?includeInactive=true" : ""}`,
@@ -48,5 +54,18 @@ export function updateDomain(
   return apiRequest<DomainSummary>(`/admin/domains/${id}`, {
     method: "PATCH",
     body: JSON.stringify(input),
+  });
+}
+
+export function addDomainOwner(domainId: number, userId: number) {
+  return apiRequest<DomainOwner>(`/admin/domains/${domainId}/owners`, {
+    method: "POST",
+    body: JSON.stringify({ userId }),
+  });
+}
+
+export function removeDomainOwner(domainId: number, userId: number) {
+  return apiRequest<{ ok: boolean }>(`/admin/domains/${domainId}/owners/${userId}`, {
+    method: "DELETE",
   });
 }

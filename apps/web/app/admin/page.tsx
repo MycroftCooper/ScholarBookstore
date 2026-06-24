@@ -10,6 +10,7 @@ import {
   rejectArticle,
   restoreArticle,
   type ArticleSummary,
+  updateAdminArticle,
 } from "@/lib/api/articles";
 import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
@@ -78,26 +79,22 @@ export default function AdminPage() {
   const [error, setError] = useState("");
 
   const isAdmin = user?.role === "admin";
-  const canModerate = user?.role === "admin" || user?.role === "reviewer";
+  const canModerate = Boolean(user);
+  const canModerateGlobal = user?.role === "admin" || user?.role === "reviewer";
 
   async function load() {
     setError("");
     try {
       const current = await getCurrentUser();
-      if (current.role !== "admin" && current.role !== "reviewer") {
-        setError("权限不足");
-        return;
-      }
       setUser(current);
 
-      const [reviewItems, articleItems, commentItems] = await Promise.all([
+      const [reviewItems, articleItems] = await Promise.all([
         listPendingReviews(),
         listAdminArticles(),
-        listAdminComments(),
       ]);
       setReviews(reviewItems);
       setArticles(articleItems);
-      setComments(commentItems);
+      setComments(current.role === "admin" || current.role === "reviewer" ? await listAdminComments() : []);
 
       if (current.role === "admin") {
         const [domainItems, moduleItems] = await Promise.all([
@@ -307,8 +304,15 @@ export default function AdminPage() {
             articles={articles}
             comments={comments}
             actingKey={actingKey}
+            canArchive={canModerateGlobal}
+            canManageComments={canModerateGlobal}
             onArchive={(id) => act(`archive-${id}`, () => archiveArticle(id))}
             onRestore={(id) => act(`restore-${id}`, () => restoreArticle(id))}
+            onToggleFeatured={(article) =>
+              act(`featured-${article.id}`, () =>
+                updateAdminArticle(article.id, { isFeatured: !article.isFeatured }),
+              )
+            }
             onHideComment={(id) => act(`hide-comment-${id}`, () => hideComment(id))}
             onShowComment={(id) => act(`show-comment-${id}`, () => showComment(id))}
             onDeleteComment={(id) => act(`delete-comment-${id}`, () => deleteComment(id))}
@@ -732,8 +736,11 @@ function ContentPanel({
   articles,
   comments,
   actingKey,
+  canArchive,
+  canManageComments,
   onArchive,
   onRestore,
+  onToggleFeatured,
   onHideComment,
   onShowComment,
   onDeleteComment,
@@ -741,8 +748,11 @@ function ContentPanel({
   articles: ArticleSummary[];
   comments: CommentItem[];
   actingKey: string;
+  canArchive: boolean;
+  canManageComments: boolean;
   onArchive: (id: number) => void;
   onRestore: (id: number) => void;
+  onToggleFeatured: (article: ArticleSummary) => void;
   onHideComment: (id: number) => void;
   onShowComment: (id: number) => void;
   onDeleteComment: (id: number) => void;
@@ -756,12 +766,18 @@ function ContentPanel({
             <div key={article.id} className="rounded-lg border border-stone-200 bg-white p-5">
               <ArticleHeading article={article} badge={statusLabel[article.status]} />
               <div className="mt-4 flex flex-wrap gap-3">
-                {article.status === "published" && (
+                <ActionButton
+                  disabled={actingKey === `featured-${article.id}`}
+                  onClick={() => onToggleFeatured(article)}
+                >
+                  {article.isFeatured ? "取消精选" : "设为精选"}
+                </ActionButton>
+                {canArchive && article.status === "published" && (
                   <ActionButton danger disabled={actingKey === `archive-${article.id}`} onClick={() => onArchive(article.id)}>
                     隐藏文章
                   </ActionButton>
                 )}
-                {article.status === "archived" && (
+                {canArchive && article.status === "archived" && (
                   <ActionButton disabled={actingKey === `restore-${article.id}`} onClick={() => onRestore(article.id)}>
                     恢复发布
                   </ActionButton>
@@ -773,6 +789,7 @@ function ContentPanel({
         </div>
       </section>
 
+      {canManageComments && (
       <section>
         <h2 className="mb-3 text-lg font-semibold text-ink">评论内容</h2>
         <div className="grid gap-3">
@@ -808,6 +825,7 @@ function ContentPanel({
           {comments.length === 0 && <EmptyState text="暂无评论" />}
         </div>
       </section>
+      )}
     </div>
   );
 }

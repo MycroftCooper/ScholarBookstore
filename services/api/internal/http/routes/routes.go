@@ -153,8 +153,8 @@ func New(deps Dependencies) http.Handler {
 			r.Use(authmiddleware.RequireRole("admin"))
 			r.Post("/admin/domains", domainHandler.Create)
 			r.Patch("/admin/domains/{id}", domainHandler.Update)
-			r.Post("/admin/modules", moduleHandler.Create)
-			r.Patch("/admin/modules/{id}", moduleHandler.Update)
+			r.Post("/admin/domains/{id}/owners", domainHandler.AddOwner)
+			r.Delete("/admin/domains/{id}/owners/{userId}", domainHandler.RemoveOwner)
 			r.Get("/admin/users", userHandler.ListAdmin)
 			r.Patch("/admin/users/{id}", userHandler.UpdateAdmin)
 			r.Get("/admin/tags", tagHandler.List)
@@ -165,11 +165,21 @@ func New(deps Dependencies) http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
-			r.Use(authmiddleware.RequireRole("reviewer", "admin"))
 			r.Get("/admin/articles", articleHandler.ListAdmin)
+			r.Patch("/admin/articles/{id}", articleHandler.UpdateAdmin)
 			r.Get("/admin/articles/reviews", articleHandler.ListPendingReview)
 			r.Post("/admin/articles/{id}/approve", articleHandler.Approve)
 			r.Post("/admin/articles/{id}/reject", articleHandler.Reject)
+			r.Post("/admin/modules", moduleHandler.Create)
+			r.Patch("/admin/modules/{id}", moduleHandler.Update)
+			r.Delete("/admin/modules/{id}", moduleHandler.Delete)
+			r.Post("/admin/modules/{id}/moderators", moduleHandler.AddModerator)
+			r.Delete("/admin/modules/{id}/moderators/{userId}", moduleHandler.RemoveModerator)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
+			r.Use(authmiddleware.RequireRole("reviewer", "admin"))
 			r.Post("/admin/articles/{id}/archive", articleHandler.Archive)
 			r.Post("/admin/articles/{id}/restore", articleHandler.RestoreArchived)
 			r.Get("/admin/comments", commentHandler.ListAdmin)

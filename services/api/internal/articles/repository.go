@@ -25,10 +25,10 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) ListPublished(ctx context.Context, filter PublishedArticleFilter, page int, pageSize int) ([]Article, int64, error) {
 	args := []interface{}{}
 	queryArgIndex := 0
-	whereClause := "a.status = 'published' and a.deleted_at is null and d.deleted_at is null and d.is_active = true"
+	whereClause := "a.status = 'published' and a.deleted_at is null and m.deleted_at is null and m.is_active = true and d.deleted_at is null and d.is_active = true"
 	if filter.ModuleSlug != "" {
 		args = append(args, filter.ModuleSlug)
-		whereClause += fmt.Sprintf(" and m.slug = $%d and m.deleted_at is null and m.is_active = true", len(args))
+		whereClause += fmt.Sprintf(" and m.slug = $%d", len(args))
 	}
 	if filter.Query != "" {
 		args = append(args, filter.Query)
@@ -43,6 +43,9 @@ func (r *Repository) ListPublished(ctx context.Context, filter PublishedArticleF
 			join tags t on t.id = at.tag_id
 			where at.article_id = a.id and t.slug = $%d
 		)`, len(args))
+	}
+	if filter.Featured {
+		whereClause += " and a.is_featured = true"
 	}
 
 	orderBy := "a.published_at desc nulls last, a.id desc"
@@ -74,8 +77,8 @@ func (r *Repository) ListPublished(ctx context.Context, filter PublishedArticleF
 	query := fmt.Sprintf(`
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
@@ -93,19 +96,24 @@ func (r *Repository) ListPublished(ctx context.Context, filter PublishedArticleF
 	return r.withTags(ctx, items), total, nil
 }
 
-func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Article, int64, error) {
+func (r *Repository) ListAdmin(ctx context.Context, filter AdminArticleFilter, page int, pageSize int) ([]Article, int64, error) {
 	args := []interface{}{}
-	filter := "a.deleted_at is null"
-	if status != "" {
-		args = append(args, status)
-		filter += fmt.Sprintf(" and a.status = $%d", len(args))
+	whereClause := "a.deleted_at is null"
+	if filter.Status != "" {
+		args = append(args, filter.Status)
+		whereClause += fmt.Sprintf(" and a.status = $%d", len(args))
+	}
+	scopeClause := r.adminScopeClause(&args, filter.ActorID, filter.ActorRole)
+	if scopeClause != "" {
+		whereClause += " and " + scopeClause
 	}
 
 	countQuery := fmt.Sprintf(`
 		select count(*)
 		from articles a
+		join modules m on m.id = a.module_id
 		where %s
-	`, filter)
+	`, whereClause)
 
 	var total int64
 	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
@@ -116,8 +124,8 @@ func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pag
 	query := fmt.Sprintf(`
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
@@ -125,7 +133,7 @@ func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pag
 		where %s
 		order by a.created_at desc, a.id desc
 		limit $%d offset $%d
-	`, filter, len(args)-1, len(args))
+	`, whereClause, len(args)-1, len(args))
 
 	items, err := r.scanMany(ctx, query, args...)
 	if err != nil {
@@ -138,14 +146,15 @@ func (r *Repository) FindPublishedByID(ctx context.Context, id int64) (Article, 
 	const query = `
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join domains d on d.id = m.domain_id
 		join users u on u.id = a.author_id
 		where a.id = $1 and a.status = 'published' and a.deleted_at is null
+			and m.deleted_at is null and m.is_active = true
 			and d.deleted_at is null and d.is_active = true
 	`
 	item, err := r.scanOne(ctx, query, id)
@@ -165,6 +174,8 @@ func (r *Repository) IncrementViewCount(ctx context.Context, id int64) error {
 			and a.module_id = m.id
 			and a.status = 'published'
 			and a.deleted_at is null
+			and m.deleted_at is null
+			and m.is_active = true
 			and d.deleted_at is null
 			and d.is_active = true
 		returning a.id
@@ -204,8 +215,8 @@ func (r *Repository) ListMine(ctx context.Context, authorID int64, status string
 	query := fmt.Sprintf(`
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
@@ -224,8 +235,8 @@ func (r *Repository) ListMine(ctx context.Context, authorID int64, status string
 
 func (r *Repository) Create(ctx context.Context, input CreateArticleInput) (Article, error) {
 	const query = `
-		insert into articles (module_id, author_id, title, summary, content_md, status, word_count, reading_minutes)
-		select $1, $2, $3, $4, $5, $6, $7, $8
+		insert into articles (module_id, author_id, title, summary, content_md, source_type, status, word_count, reading_minutes)
+		select $1, $2, $3, $4, $5, $6, $7, $8, $9
 		where exists (
 			select 1 from modules
 			where id = $1 and is_active = true and deleted_at is null
@@ -242,6 +253,7 @@ func (r *Repository) Create(ctx context.Context, input CreateArticleInput) (Arti
 		input.Title,
 		input.Summary,
 		input.ContentMD,
+		input.SourceType,
 		input.Status,
 		input.WordCount,
 		input.ReadingMinutes,
@@ -259,18 +271,18 @@ func (r *Repository) Create(ctx context.Context, input CreateArticleInput) (Arti
 }
 
 func (r *Repository) CreateRevision(ctx context.Context, originalID int64, authorID int64, input UpdateArticleInput) (Article, error) {
-	if input.Title == nil || input.Summary == nil || input.ContentMD == nil || input.WordCount == nil || input.ReadingMinutes == nil {
+	if input.Title == nil || input.Summary == nil || input.ContentMD == nil || input.SourceType == nil || input.WordCount == nil || input.ReadingMinutes == nil {
 		return Article{}, ErrInvalidInput
 	}
 
 	const query = `
 		insert into articles (
-			module_id, author_id, title, summary, content_md, status,
+			module_id, author_id, title, summary, content_md, source_type, status,
 			word_count, reading_minutes, revision_of_article_id
 		)
 		select
-			original.module_id, original.author_id, $3, $4, $5, 'pending_review',
-			$6, $7, original.id
+			original.module_id, original.author_id, $3, $4, $5, $6, 'pending_review',
+			$7, $8, original.id
 		from articles original
 		where original.id = $1
 			and original.author_id = $2
@@ -295,6 +307,7 @@ func (r *Repository) CreateRevision(ctx context.Context, originalID int64, autho
 		*input.Title,
 		*input.Summary,
 		*input.ContentMD,
+		*input.SourceType,
 		*input.WordCount,
 		*input.ReadingMinutes,
 	).Scan(&id)
@@ -317,8 +330,8 @@ func (r *Repository) FindByIDForAuthor(ctx context.Context, id int64, authorID i
 	const query = `
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
@@ -339,16 +352,17 @@ func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, in
 			title = coalesce($3, title),
 			summary = coalesce($4, summary),
 			content_md = coalesce($5, content_md),
-			word_count = coalesce($6, word_count),
-			reading_minutes = coalesce($7, reading_minutes),
+			source_type = coalesce($6, source_type),
+			word_count = coalesce($7, word_count),
+			reading_minutes = coalesce($8, reading_minutes),
 			status = case
 				when status = 'rejected' then 'pending_review'
-				when $8::varchar is not null then $8
+				when $9::varchar is not null then $9
 				else status
 			end,
-			reviewed_by = case when status = 'rejected' or $8::varchar = 'pending_review' then null else reviewed_by end,
-			reviewed_at = case when status = 'rejected' or $8::varchar = 'pending_review' then null else reviewed_at end,
-			review_note = case when status = 'rejected' or $8::varchar = 'pending_review' then '' else review_note end,
+			reviewed_by = case when status = 'rejected' or $9::varchar = 'pending_review' then null else reviewed_by end,
+			reviewed_at = case when status = 'rejected' or $9::varchar = 'pending_review' then null else reviewed_at end,
+			review_note = case when status = 'rejected' or $9::varchar = 'pending_review' then '' else review_note end,
 			updated_at = now()
 		where id = $1
 			and author_id = $2
@@ -366,6 +380,7 @@ func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, in
 		input.Title,
 		input.Summary,
 		input.ContentMD,
+		input.SourceType,
 		input.WordCount,
 		input.ReadingMinutes,
 		input.Status,
@@ -386,37 +401,74 @@ func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, in
 	return r.FindByIDForAuthor(ctx, updatedID, authorID)
 }
 
-func (r *Repository) ListPendingReview(ctx context.Context, page int, pageSize int) ([]Article, int64, error) {
-	const countQuery = `
+func (r *Repository) ListPendingReview(ctx context.Context, filter AdminArticleFilter, page int, pageSize int) ([]Article, int64, error) {
+	args := []interface{}{}
+	whereClause := "a.status = 'pending_review' and a.deleted_at is null"
+	scopeClause := r.adminScopeClause(&args, filter.ActorID, filter.ActorRole)
+	if scopeClause != "" {
+		whereClause += " and " + scopeClause
+	}
+
+	countQuery := fmt.Sprintf(`
 		select count(*)
 		from articles a
-		where a.status = 'pending_review' and a.deleted_at is null
-	`
+		join modules m on m.id = a.module_id
+		where %s
+	`, whereClause)
 
 	var total int64
-	if err := r.db.QueryRow(ctx, countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count pending review articles: %w", err)
 	}
 
-	const query = `
+	args = append(args, pageSize, (page-1)*pageSize)
+	query := fmt.Sprintf(`
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join users u on u.id = a.author_id
-		where a.status = 'pending_review' and a.deleted_at is null
+		where %s
 		order by a.created_at asc, a.id asc
-		limit $1 offset $2
-	`
+		limit $%d offset $%d
+	`, whereClause, len(args)-1, len(args))
 
-	items, err := r.scanMany(ctx, query, pageSize, (page-1)*pageSize)
+	items, err := r.scanMany(ctx, query, args...)
 	if err != nil {
 		return nil, 0, err
 	}
 	return r.withTags(ctx, items), total, nil
+}
+
+func (r *Repository) CanModerateArticle(ctx context.Context, actorID int64, actorRole string, articleID int64) (bool, error) {
+	if actorRole == "admin" {
+		return true, nil
+	}
+	if actorID <= 0 || articleID <= 0 {
+		return false, nil
+	}
+
+	const query = `
+		select exists (
+			select 1
+			from articles a
+			join modules m on m.id = a.module_id
+			left join domain_owners do on do.domain_id = m.domain_id and do.user_id = $2
+			left join module_moderators mm on mm.module_id = m.id and mm.user_id = $2
+			where a.id = $1
+				and a.deleted_at is null
+				and m.deleted_at is null
+				and (do.user_id is not null or mm.user_id is not null)
+		)
+	`
+	var allowed bool
+	if err := r.db.QueryRow(ctx, query, articleID, actorID).Scan(&allowed); err != nil {
+		return false, fmt.Errorf("check article moderation permission: %w", err)
+	}
+	return allowed, nil
 }
 
 func (r *Repository) Approve(ctx context.Context, id int64, input ReviewArticleInput) (Article, error) {
@@ -461,6 +513,7 @@ func (r *Repository) Approve(ctx context.Context, id int64, input ReviewArticleI
 				title = revision.title,
 				summary = revision.summary,
 				content_md = revision.content_md,
+				source_type = revision.source_type,
 				word_count = revision.word_count,
 				reading_minutes = revision.reading_minutes,
 				revision_count = original.revision_count + 1,
@@ -569,12 +622,56 @@ func (r *Repository) RestoreArchived(ctx context.Context, id int64) (Article, er
 	return r.updateStatus(ctx, query, id)
 }
 
+func (r *Repository) UpdateAdmin(ctx context.Context, id int64, input AdminUpdateArticleInput) (Article, error) {
+	if input.IsFeatured == nil {
+		return Article{}, ErrInvalidInput
+	}
+
+	const query = `
+		update articles
+		set is_featured = coalesce($2, is_featured), updated_at = now()
+		where id = $1 and deleted_at is null
+		returning id
+	`
+
+	var updatedID int64
+	err := r.db.QueryRow(ctx, query, id, input.IsFeatured).Scan(&updatedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Article{}, ErrNotFound
+	}
+	if err != nil {
+		return Article{}, fmt.Errorf("update article admin metadata: %w", err)
+	}
+
+	return r.findByID(ctx, updatedID)
+}
+
+func (r *Repository) adminScopeClause(args *[]interface{}, actorID int64, actorRole string) string {
+	if actorRole == "admin" {
+		return ""
+	}
+	if actorID <= 0 {
+		return "false"
+	}
+	*args = append(*args, actorID)
+	index := len(*args)
+	return fmt.Sprintf(`(exists (
+		select 1
+		from domain_owners do
+		where do.domain_id = m.domain_id and do.user_id = $%d
+	) or exists (
+		select 1
+		from module_moderators mm
+		where mm.module_id = m.id and mm.user_id = $%d
+	))`, index, index)
+}
+
 func (r *Repository) findByID(ctx context.Context, id int64) (Article, error) {
 	const query = `
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
@@ -597,8 +694,8 @@ func (r *Repository) updateStatus(ctx context.Context, query string, id int64) (
 	const findQuery = `
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
@@ -621,8 +718,8 @@ func (r *Repository) review(ctx context.Context, query string, id int64, input R
 	const findQuery = `
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.slug, a.summary, a.content_md, a.status, a.review_note,
-			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
 			a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
@@ -843,6 +940,7 @@ func scanArticle(scanner articleScanner) (Article, error) {
 		&item.Slug,
 		&item.Summary,
 		&item.ContentMD,
+		&item.SourceType,
 		&item.Status,
 		&item.ReviewNote,
 		&item.PublishedAt,
@@ -851,6 +949,7 @@ func scanArticle(scanner articleScanner) (Article, error) {
 		&item.ReadingMinutes,
 		&item.ViewCount,
 		&item.RevisionCount,
+		&item.IsFeatured,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	)

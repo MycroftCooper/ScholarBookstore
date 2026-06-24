@@ -1,6 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { UserAvatar } from "@/components/users/UserAvatar";
+import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
 import {
   createComment,
   deleteComment,
@@ -9,53 +12,68 @@ import {
   voteComment,
   type CommentItem,
 } from "@/lib/api/comments";
-import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
-import { ApiError } from "@/lib/api/client";
 
 type CommentSectionProps = {
   articleId: number;
+  initialCount?: number;
 };
 
-const commentPageSize = 10;
+const pageSize = 10;
 
-export function CommentSection({ articleId }: CommentSectionProps) {
+export function CommentSection({ articleId, initialCount = 0 }: CommentSectionProps) {
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [content, setContent] = useState("");
   const [replyContent, setReplyContent] = useState<Record<number, string>>({});
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
-  const [sort, setSort] = useState<"latest" | "hot">("latest");
+  const [sort, setSort] = useState<"hot" | "latest">("hot");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [loginRequired, setLoginRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   async function loadComments(nextPage = 1, append = false) {
-    const items = await listComments(articleId, sort, nextPage, commentPageSize);
-    setComments((current) => (append ? [...current, ...items] : items));
-    setPage(nextPage);
-    setHasMore(items.filter((item) => item.parentId === null).length >= commentPageSize);
+    try {
+      const items = await listComments(articleId, sort, nextPage, pageSize);
+      setLoginRequired(false);
+      setComments((current) => (append ? [...current, ...items] : items));
+      setPage(nextPage);
+      setHasMore(items.filter((item) => item.parentId === null).length >= pageSize);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setLoginRequired(true);
+        setComments([]);
+        setHasMore(false);
+        return;
+      }
+      throw err;
+    }
   }
 
   useEffect(() => {
     setLoading(true);
+    setError("");
     setComments([]);
     setPage(1);
     setHasMore(false);
-    getCurrentUser()
-      .then((user) => {
-        setCurrentUser(user);
-        return loadComments(1, false);
-      })
-      .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) {
-          setCurrentUser(null);
-          return;
-        }
-        setError("评论加载失败，请稍后重试");
-      })
+    setLoginRequired(false);
+
+    Promise.all([
+      loadComments(1, false),
+      getCurrentUser()
+        .then(setCurrentUser)
+        .catch((err) => {
+          if (err instanceof ApiError && err.status === 401) {
+            setCurrentUser(null);
+            return;
+          }
+          throw err;
+        }),
+    ])
+      .catch(() => setError("评论加载失败，请稍后重试"))
       .finally(() => setLoading(false));
   }, [articleId, sort]);
 
@@ -70,25 +88,31 @@ export function CommentSection({ articleId }: CommentSectionProps) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!content.trim()) {
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
-      await createComment(articleId, content);
+      await createComment(articleId, content.trim());
       setContent("");
       await loadComments(1, false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setError("请先登录后再评论");
-      } else {
-        setError("评论提交失败，请稍后重试");
+        window.location.href = "/login";
+        return;
       }
+      setError("评论提交失败，请稍后重试");
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleReply(parentId: number) {
-    const value = replyContent[parentId] ?? "";
+    const value = (replyContent[parentId] ?? "").trim();
+    if (!value) {
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -98,10 +122,10 @@ export function CommentSection({ articleId }: CommentSectionProps) {
       await loadComments(1, false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setError("请先登录后再回复");
-      } else {
-        setError("回复提交失败，请稍后重试");
+        window.location.href = "/login";
+        return;
       }
+      setError("回复提交失败，请稍后重试");
     } finally {
       setSubmitting(false);
     }
@@ -124,7 +148,10 @@ export function CommentSection({ articleId }: CommentSectionProps) {
     if (comment.deleted || comment.visibility === "hidden") {
       return;
     }
-    setError("");
+    if (!currentUser) {
+      window.location.href = "/login";
+      return;
+    }
     const nextValue = comment.myVote === value ? 0 : value;
     try {
       const updated = await voteComment(comment.id, nextValue);
@@ -132,7 +159,7 @@ export function CommentSection({ articleId }: CommentSectionProps) {
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
     } catch {
-      setError("赞踩失败，请稍后重试");
+      setError("点赞操作失败，请稍后重试");
     }
   }
 
@@ -157,222 +184,245 @@ export function CommentSection({ articleId }: CommentSectionProps) {
     );
   }
 
+  if (loginRequired) {
+    return (
+      <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[var(--shadow-soft)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line)] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold">评论</h2>
+            <span className="rounded border border-[var(--color-accent)] px-2 py-0.5 text-xs font-semibold text-[var(--color-accent-strong)]">
+              {initialCount}
+            </span>
+          </div>
+        </div>
+        <div className="p-5">
+          <div className="rounded-md border border-dashed border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 py-5 text-sm text-[var(--color-muted)]">
+            评论仅登录用户可见。请先
+            <a href="/login" className="mx-1 font-semibold text-[var(--color-ink)] underline-offset-4 hover:underline">
+              登录
+            </a>
+            后查看评论。
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="mt-6 rounded-lg border border-stone-200 bg-white p-6">
-      <h2 className="text-lg font-semibold text-ink">评论</h2>
-      {currentUser && (
-        <div className="mt-3 flex gap-2 text-sm">
-          <button
-            type="button"
-            onClick={() => setSort("latest")}
-            className={`rounded-md border px-3 py-1 ${
-              sort === "latest" ? "border-moss text-moss" : "border-stone-300"
-            }`}
-          >
-            最新
-          </button>
-          <button
-            type="button"
-            onClick={() => setSort("hot")}
-            className={`rounded-md border px-3 py-1 ${
-              sort === "hot" ? "border-moss text-moss" : "border-stone-300"
-            }`}
-          >
-            最热
-          </button>
+    <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[var(--shadow-soft)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line)] px-5 py-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold">评论</h2>
+          <span className="rounded border border-[var(--color-accent)] px-2 py-0.5 text-xs font-semibold text-[var(--color-accent-strong)]">
+            {Math.max(initialCount, topLevelComments.length)}
+          </span>
         </div>
-      )}
-
-      {error && (
-        <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {currentUser ? (
-        <form onSubmit={handleSubmit} className="mt-4">
-          <textarea
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            required
-            rows={3}
-            className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
-            placeholder="写下你的评论"
-          />
-          <button
-            type="submit"
-            disabled={submitting}
-            className="mt-3 rounded-md bg-moss px-4 py-2 text-sm font-medium text-white hover:bg-[#354f42] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            发表评论
-          </button>
-        </form>
-      ) : (
-        <p className="mt-4 rounded-md bg-stone-50 p-3 text-sm text-stone-500">
-          登录后查看评论区并参与评论。
-        </p>
-      )}
-
-      {currentUser && (
-        <div className="mt-6 grid gap-4">
-          {loading && <p className="text-sm text-stone-500">正在加载评论...</p>}
-          {!loading && topLevelComments.length === 0 && (
-            <p className="text-sm text-stone-500">暂无评论</p>
-          )}
-          {topLevelComments.map((comment) => {
-            const commentUnavailable =
-              comment.deleted || comment.visibility === "hidden";
-            return (
-          <div
-            key={comment.id}
-            className={`rounded-md border border-stone-200 p-4 ${
-              commentUnavailable ? "bg-stone-50" : ""
-            }`}
-          >
-            <div className="text-sm font-medium text-ink">
-              {comment.authorUsername}
-            </div>
-            <p
-              className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${
-                commentUnavailable ? "text-stone-500" : "text-stone-700"
+        <div className="flex rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] p-1 text-xs font-semibold">
+          {(["hot", "latest"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setSort(item)}
+              className={`rounded px-3 py-1.5 ${
+                sort === item
+                  ? "bg-[var(--color-accent)] text-[#171717]"
+                  : "text-[var(--color-muted)] hover:text-[var(--color-ink)]"
               }`}
             >
-              {comment.content}
-            </p>
-            {currentUser && !commentUnavailable && (
-              <div className="mt-2 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleVote(comment, 1)}
-                  className={`text-sm font-medium hover:underline ${
-                    comment.myVote === 1 ? "text-moss" : "text-stone-600"
-                  }`}
-                >
-                  赞 {comment.upVotes}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleVote(comment, -1)}
-                  className={`text-sm font-medium hover:underline ${
-                    comment.myVote === -1 ? "text-red-600" : "text-stone-600"
-                  }`}
-                >
-                  踩 {comment.downVotes}
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setReplyingTo((current) =>
-                      current === comment.id ? null : comment.id,
-                    )
-                  }
-                  className="text-sm font-medium text-moss hover:underline"
-                >
-                  回复
-                </button>
-                {canDelete(comment) && (
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(comment.id)}
-                    className="text-sm font-medium text-red-600 hover:underline"
-                  >
-                    删除
-                  </button>
-                )}
-              </div>
-            )}
+              {item === "hot" ? "最热" : "最新"}
+            </button>
+          ))}
+        </div>
+      </div>
 
-            {replyingTo === comment.id && !commentUnavailable && (
-              <div className="mt-3">
-                <textarea
-                  value={replyContent[comment.id] ?? ""}
-                  onChange={(event) =>
-                    setReplyContent((current) => ({
-                      ...current,
-                      [comment.id]: event.target.value,
-                    }))
-                  }
-                  required
-                  rows={2}
-                  className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-moss focus:ring-2 focus:ring-moss/15"
-                />
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => handleReply(comment.id)}
-                  className="mt-2 rounded-md bg-moss px-3 py-2 text-sm font-medium text-white hover:bg-[#354f42] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  提交回复
-                </button>
-              </div>
-            )}
+      <div className="p-5">
+        {error && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
-            <div className="mt-3 grid gap-2 border-l border-stone-200 pl-4">
-              {repliesFor(comment.id).map((reply) => (
-                <div key={reply.id} className="rounded-md bg-stone-50 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm font-medium text-ink">
-                      {reply.authorUsername}
-                      {reply.replyToUsername && (
-                        <span className="font-normal text-stone-500">
-                          {" "}
-                          回复 {reply.replyToUsername}
-                        </span>
-                      )}
-                    </div>
-                    {canDelete(reply) && (
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(reply.id)}
-                        className="text-sm font-medium text-red-600 hover:underline"
-                      >
+        {currentUser ? (
+          <form onSubmit={handleSubmit} className="mb-5 flex gap-3">
+            <UserAvatar username={currentUser.username} avatarUrl={currentUser.avatarUrl} size="sm" />
+            <div className="min-w-0 flex-1">
+              <textarea
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                required
+                rows={2}
+                className="w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 py-2 text-sm outline-none transition focus:border-[var(--color-accent-strong)]"
+                placeholder="写下你的评论..."
+              />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="mt-2 rounded-md bg-[var(--color-ink)] px-4 py-2 text-sm font-semibold text-[var(--color-page)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                发表评论
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="mb-5 rounded-md border border-dashed border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 py-3 text-sm text-[var(--color-muted)]">
+            登录后可以参与评论、回复和点赞。
+          </div>
+        )}
+
+        <div className="grid gap-4">
+          {loading && <p className="text-sm text-[var(--color-muted)]">正在加载评论...</p>}
+          {!loading && topLevelComments.length === 0 && (
+            <p className="text-sm text-[var(--color-muted)]">暂无评论，来写下第一条吧。</p>
+          )}
+          {topLevelComments.map((comment) => (
+            <CommentCard
+              key={comment.id}
+              comment={comment}
+              replies={repliesFor(comment.id)}
+              replying={replyingTo === comment.id}
+              replyValue={replyContent[comment.id] ?? ""}
+              submitting={submitting}
+              canDelete={Boolean(canDelete(comment))}
+              canDeleteReply={(reply) => Boolean(canDelete(reply))}
+              onVote={handleVote}
+              onDelete={handleDelete}
+              onReplyToggle={() =>
+                setReplyingTo((current) => (current === comment.id ? null : comment.id))
+              }
+              onReplyChange={(value) =>
+                setReplyContent((current) => ({ ...current, [comment.id]: value }))
+              }
+              onReplySubmit={() => handleReply(comment.id)}
+            />
+          ))}
+        </div>
+
+        {hasMore && (
+          <button
+            type="button"
+            disabled={loadingMore}
+            onClick={handleLoadMore}
+            className="mt-5 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 py-2 text-sm font-semibold text-[var(--color-muted)] hover:border-[var(--color-accent-strong)] hover:text-[var(--color-ink)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loadingMore ? "加载中..." : "加载更多评论"}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CommentCard({
+  comment,
+  replies,
+  replying,
+  replyValue,
+  submitting,
+  canDelete,
+  canDeleteReply,
+  onVote,
+  onDelete,
+  onReplyToggle,
+  onReplyChange,
+  onReplySubmit,
+}: {
+  comment: CommentItem;
+  replies: CommentItem[];
+  replying: boolean;
+  replyValue: string;
+  submitting: boolean;
+  canDelete: boolean;
+  canDeleteReply: (reply: CommentItem) => boolean;
+  onVote: (comment: CommentItem, value: -1 | 1) => void;
+  onDelete: (id: number) => void;
+  onReplyToggle: () => void;
+  onReplyChange: (value: string) => void;
+  onReplySubmit: () => void;
+}) {
+  const unavailable = comment.deleted || comment.visibility === "hidden";
+
+  return (
+    <article className="border-b border-[var(--color-line)] pb-4 last:border-b-0">
+      <div className="flex gap-3">
+        <UserAvatar username={comment.authorUsername} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted)]">
+            <span className="font-semibold text-[var(--color-ink)]">{comment.authorUsername}</span>
+            <span>{formatDate(comment.createdAt)}</span>
+          </div>
+          <p className={`mt-2 whitespace-pre-wrap text-sm leading-7 ${unavailable ? "text-[var(--color-muted)]" : ""}`}>
+            {comment.content}
+          </p>
+          {!unavailable && (
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-xs font-semibold text-[var(--color-muted)]">
+              <button type="button" onClick={() => onVote(comment, 1)} className="hover:text-[var(--color-ink)]">
+                赞 {comment.upVotes}
+              </button>
+              <button type="button" onClick={() => onReplyToggle()} className="hover:text-[var(--color-ink)]">
+                回复
+              </button>
+              {canDelete && (
+                <button type="button" onClick={() => onDelete(comment.id)} className="text-red-600 hover:underline">
+                  删除
+                </button>
+              )}
+            </div>
+          )}
+
+          {replying && !unavailable && (
+            <div className="mt-3">
+              <textarea
+                value={replyValue}
+                onChange={(event) => onReplyChange(event.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent-strong)]"
+                placeholder={`回复 ${comment.authorUsername}`}
+              />
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={onReplySubmit}
+                className="mt-2 rounded-md bg-[var(--color-ink)] px-3 py-1.5 text-xs font-semibold text-[var(--color-page)] disabled:opacity-60"
+              >
+                提交回复
+              </button>
+            </div>
+          )}
+
+          {replies.length > 0 && (
+            <div className="mt-3 grid gap-2 border-l border-[var(--color-line)] pl-4">
+              {replies.map((reply) => (
+                <div key={reply.id} className="rounded-md bg-[var(--color-surface-solid)] p-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
+                    <span className="font-semibold text-[var(--color-ink)]">{reply.authorUsername}</span>
+                    {reply.replyToUsername && <span>回复 {reply.replyToUsername}</span>}
+                    <span>{formatDate(reply.createdAt)}</span>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{reply.content}</p>
+                  <div className="mt-2 flex gap-4 text-xs font-semibold text-[var(--color-muted)]">
+                    <button type="button" onClick={() => onVote(reply, 1)} className="hover:text-[var(--color-ink)]">
+                      赞 {reply.upVotes}
+                    </button>
+                    {canDeleteReply(reply) && (
+                      <button type="button" onClick={() => onDelete(reply.id)} className="text-red-600 hover:underline">
                         删除
                       </button>
                     )}
                   </div>
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-stone-700">
-                    {reply.content}
-                  </p>
-                  {!reply.deleted && reply.visibility !== "hidden" && (
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleVote(reply, 1)}
-                      className={`text-sm font-medium hover:underline ${
-                        reply.myVote === 1 ? "text-moss" : "text-stone-600"
-                      }`}
-                    >
-                      赞 {reply.upVotes}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleVote(reply, -1)}
-                      className={`text-sm font-medium hover:underline ${
-                        reply.myVote === -1 ? "text-red-600" : "text-stone-600"
-                      }`}
-                    >
-                      踩 {reply.downVotes}
-                    </button>
-                  </div>
-                  )}
                 </div>
               ))}
             </div>
-          </div>
-            );
-          })}
-          {hasMore && (
-            <button
-              type="button"
-              disabled={loadingMore}
-              onClick={handleLoadMore}
-              className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-700 hover:border-moss hover:text-moss disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loadingMore ? "加载中..." : "加载更多评论"}
-            </button>
           )}
         </div>
-      )}
-    </section>
+      </div>
+    </article>
   );
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
 }

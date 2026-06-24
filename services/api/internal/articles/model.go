@@ -13,6 +13,7 @@ type Article struct {
 	Slug           *string
 	Summary        string
 	ContentMD      string
+	SourceType     string
 	Status         string
 	ReviewNote     string
 	PublishedAt    *time.Time
@@ -21,6 +22,7 @@ type Article struct {
 	ReadingMinutes int
 	ViewCount      int64
 	RevisionCount  int
+	IsFeatured     bool
 	Tags           []Tag
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -36,6 +38,7 @@ type PublicArticle struct {
 	Title          string     `json:"title"`
 	Summary        string     `json:"summary"`
 	ContentMD      string     `json:"contentMd,omitempty"`
+	SourceType     string     `json:"sourceType"`
 	Status         string     `json:"status"`
 	ReviewNote     string     `json:"reviewNote,omitempty"`
 	PublishedAt    *time.Time `json:"publishedAt"`
@@ -44,6 +47,7 @@ type PublicArticle struct {
 	ReadingMinutes int        `json:"readingMinutes"`
 	ViewCount      int64      `json:"viewCount"`
 	RevisionCount  int        `json:"revisionCount"`
+	IsFeatured     bool       `json:"isFeatured"`
 	Tags           []Tag      `json:"tags"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
@@ -55,6 +59,7 @@ type CreateArticleInput struct {
 	Title          string
 	Summary        string
 	ContentMD      string
+	SourceType     string
 	Status         string
 	RevisionOfID   *int64
 	WordCount      int
@@ -66,6 +71,7 @@ type UpdateArticleInput struct {
 	Title          *string
 	Summary        *string
 	ContentMD      *string
+	SourceType     *string
 	Status         *string
 	WordCount      *int
 	ReadingMinutes *int
@@ -84,11 +90,22 @@ type ReviewArticleInput struct {
 	ReviewNote string
 }
 
+type AdminUpdateArticleInput struct {
+	IsFeatured *bool
+}
+
+type AdminArticleFilter struct {
+	Status    string
+	ActorID   int64
+	ActorRole string
+}
+
 type PublishedArticleFilter struct {
 	ModuleSlug string
 	Query      string
 	TagSlug    string
 	Sort       string
+	Featured   bool
 }
 
 type Page struct {
@@ -109,6 +126,7 @@ func ToPublic(article Article, includeContent bool) PublicArticle {
 		Title:          article.Title,
 		Summary:        article.Summary,
 		Status:         article.Status,
+		SourceType:     article.SourceType,
 		ReviewNote:     article.ReviewNote,
 		PublishedAt:    article.PublishedAt,
 		RevisionOfID:   article.RevisionOfID,
@@ -116,6 +134,7 @@ func ToPublic(article Article, includeContent bool) PublicArticle {
 		ReadingMinutes: article.ReadingMinutes,
 		ViewCount:      article.ViewCount,
 		RevisionCount:  article.RevisionCount,
+		IsFeatured:     article.IsFeatured,
 		Tags:           publicTagsOrEmpty(article.Tags),
 		CreatedAt:      article.CreatedAt,
 		UpdatedAt:      article.UpdatedAt,

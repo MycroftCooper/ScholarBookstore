@@ -30,6 +30,12 @@ type PublicModule struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+type ModuleModerator struct {
+	ModuleID  int64     `json:"moduleId"`
+	UserID    int64     `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type CreateModuleInput struct {
 	DomainID    int64
 	Slug        string

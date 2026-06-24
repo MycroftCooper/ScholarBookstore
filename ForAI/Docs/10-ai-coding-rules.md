@@ -195,6 +195,8 @@
 - 页面路由变化：更新 `07-pages-routes.md`。
 - 开发阶段变化：更新 `08-development-plan.md`。
 - 部署方式变化：更新 `09-deployment-operations.md`。
+- 新增未实现功能或发现明确功能缺口：更新 `TODO.md`。
+- 完成 `TODO.md` 中的功能后：移除对应 TODO 条目，不保留已完成事项。
 
 ## 14. 不确定性处理
 
@@ -204,7 +206,16 @@
 - 不擅自做重大产品决策。
 - 对安全、权限、数据丢失相关问题优先询问用户。
 
-## 15. 完成标准
+## 15. 中文与编码安全规则
+
+处理包含中文的文档、页面文案、配置说明时必须遵守：
+
+- 含中文文件不再以 PowerShell `Get-Content` 的显示结果作为编辑依据。`Get-Content` 只可用于粗略定位；真正读取内容时优先用按 UTF-8 读取的工具，或使用 `rg` 定位后通过 `apply_patch` 修改。
+- 不得通过 `python -c "中文..."`、PowerShell 字符串拼接、重定向等 shell 文本链路写入中文内容。中文内容统一优先使用 `apply_patch`，避免经过控制台编码转换。
+- 修改中文文档或中文 UI 文案后，必须做编码体检：检查是否出现 Unicode replacement character、常见 mojibake 片段、大面积无关 diff；若发现编码污染，必须先恢复文件再继续修改。
+- 编码体检必须使用 `node scripts/check-encoding.mjs`；PowerShell 版脚本只可保留为历史参考，不作为最终准入。
+
+## 16. 完成标准
 
 AI 每次完成编码任务时必须说明：
 

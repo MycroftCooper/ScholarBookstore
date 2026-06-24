@@ -39,7 +39,8 @@ npm.cmd run typecheck
 - [x] 新增 `ForAI/Docs/12-backend-health-audit.md`，记录后端模块边界、测试缺口、P0/P1/P2 风险和后续重构建议。
 - [x] 新增 `ForAI/Docs/13-system-capability-map.md`，作为当前系统能力、权限、数据表、页面入口、测试状态的总览。
 - [x] 新增 `scripts/verify.ps1`，统一执行后端测试、前端 typecheck 和编码扫描。
-- [x] 新增 `scripts/check-encoding.ps1`，扫描高置信 mojibake 特征，排除缓存、依赖和二进制文件。
+- [x] 新增 `scripts/check-encoding.mjs`，按字节验证 UTF-8 并扫描高置信 mojibake 特征，排除缓存、依赖和二进制文件。
+- [x] `scripts/verify.ps1` 仅负责调度命令，编码准入改由 Node 脚本执行，避免 PowerShell 读写中文内容造成 GBK 污染。
 - [x] 新增 HTTP 冒烟测试脚手架 `services/api/internal/testutil` 和 routes smoke tests；设置 `TEST_DATABASE_URL` 后覆盖真实 PostgreSQL + router + cookie 鉴权链路。
 - [x] 小规模后端重构：新增 `internal/http/request`，并接入 users/tags/reports handler 的 JSON、分页、路径 ID 解析。
 - [x] 修复举报重复处理错误映射：`ErrConflict` 返回 `409 CONFLICT`。
@@ -179,7 +180,7 @@ powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
 
 - domains、modules 业务包。
 - articles 业务包。
-- 文章主链路补充：草稿保存、提交审核、我的草稿、状态筛选、已发布文章修订重审、Tag、文章 TOC、文章元数据（字数、预计阅读时长、浏览量、修订次数）。
+- 文章主链路补充：草稿保存、提交审核、我的文章草稿筛选、状态筛选、已发布文章修订重审、Tag、文章 TOC、文章元数据（字数、预计阅读时长、浏览量、修订次数）。
 - 必要的管理领域和版块接口。
 
 验收标准：

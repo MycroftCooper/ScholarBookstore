@@ -18,7 +18,7 @@ func (r *fakeArticleRepo) ListPublished(_ context.Context, _ PublishedArticleFil
 	return []Article{{ID: 1, Title: "published", Status: "published"}}, 1, nil
 }
 
-func (r *fakeArticleRepo) ListAdmin(_ context.Context, _ string, _ int, _ int) ([]Article, int64, error) {
+func (r *fakeArticleRepo) ListAdmin(_ context.Context, _ AdminArticleFilter, _ int, _ int) ([]Article, int64, error) {
 	return []Article{{ID: 1, Title: "published", Status: "published"}}, 1, nil
 }
 
@@ -50,6 +50,7 @@ func (r *fakeArticleRepo) Create(_ context.Context, input CreateArticleInput) (A
 		Title:          input.Title,
 		Summary:        input.Summary,
 		ContentMD:      input.ContentMD,
+		SourceType:     input.SourceType,
 		Status:         input.Status,
 		WordCount:      input.WordCount,
 		ReadingMinutes: input.ReadingMinutes,
@@ -62,12 +63,14 @@ func (r *fakeArticleRepo) CreateRevision(_ context.Context, originalID int64, au
 	title := *input.Title
 	summary := *input.Summary
 	content := *input.ContentMD
+	sourceType := *input.SourceType
 	return Article{
 		ID:           22,
 		AuthorID:     authorID,
 		Title:        title,
 		Summary:      summary,
 		ContentMD:    content,
+		SourceType:   sourceType,
 		Status:       "pending_review",
 		RevisionOfID: &revisionOfID,
 	}, nil
@@ -99,8 +102,12 @@ func (r *fakeArticleRepo) UpdateOwn(_ context.Context, id int64, authorID int64,
 	}, nil
 }
 
-func (r *fakeArticleRepo) ListPendingReview(_ context.Context, _ int, _ int) ([]Article, int64, error) {
+func (r *fakeArticleRepo) ListPendingReview(_ context.Context, _ AdminArticleFilter, _ int, _ int) ([]Article, int64, error) {
 	return []Article{{ID: 3, Title: "pending", Status: "pending_review"}}, 1, nil
+}
+
+func (r *fakeArticleRepo) CanModerateArticle(_ context.Context, _ int64, _ string, _ int64) (bool, error) {
+	return true, nil
 }
 
 func (r *fakeArticleRepo) Approve(_ context.Context, id int64, input ReviewArticleInput) (Article, error) {
@@ -117,6 +124,14 @@ func (r *fakeArticleRepo) Archive(_ context.Context, id int64) (Article, error) 
 
 func (r *fakeArticleRepo) RestoreArchived(_ context.Context, id int64) (Article, error) {
 	return Article{ID: id, Title: "restored", Status: "published"}, nil
+}
+
+func (r *fakeArticleRepo) UpdateAdmin(_ context.Context, id int64, input AdminUpdateArticleInput) (Article, error) {
+	isFeatured := false
+	if input.IsFeatured != nil {
+		isFeatured = *input.IsFeatured
+	}
+	return Article{ID: id, Title: "admin updated", Status: "published", IsFeatured: isFeatured}, nil
 }
 
 func TestCreateNormalizesInput(t *testing.T) {
@@ -139,6 +154,9 @@ func TestCreateNormalizesInput(t *testing.T) {
 	}
 	if repo.created.Title != "Title" || repo.created.Summary != "Summary" || repo.created.ContentMD != "Body text" {
 		t.Fatalf("input was not normalized: %#v", repo.created)
+	}
+	if repo.created.SourceType != "original" || article.SourceType != "original" {
+		t.Fatalf("source type should default to original: input=%s article=%s", repo.created.SourceType, article.SourceType)
 	}
 	if repo.created.WordCount != 8 || repo.created.ReadingMinutes != 1 {
 		t.Fatalf("unexpected metrics: %#v", repo.created)
@@ -245,7 +263,7 @@ func TestUpdateOwnComputesMetrics(t *testing.T) {
 
 func TestUpdatePublishedCreatesRevision(t *testing.T) {
 	repo := &fakeArticleRepo{
-		current: Article{ID: 7, Title: "published", Summary: "old", ContentMD: "old body", Status: "published"},
+		current: Article{ID: 7, Title: "published", Summary: "old", ContentMD: "old body", SourceType: "original", Status: "published"},
 	}
 	service := NewService(repo)
 	title := " Revised title "
@@ -277,7 +295,7 @@ func TestUpdatePublishedCreatesRevision(t *testing.T) {
 func TestRejectRequiresReviewNote(t *testing.T) {
 	service := NewService(&fakeArticleRepo{})
 
-	_, err := service.Reject(context.Background(), 1, 2, " ")
+	_, err := service.Reject(context.Background(), 1, 2, "admin", " ")
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
@@ -286,7 +304,7 @@ func TestRejectRequiresReviewNote(t *testing.T) {
 func TestApprovePublishesArticle(t *testing.T) {
 	service := NewService(&fakeArticleRepo{})
 
-	article, err := service.Approve(context.Background(), 1, 2, "ok")
+	article, err := service.Approve(context.Background(), 1, 2, "admin", "ok")
 	if err != nil {
 		t.Fatalf("approve article: %v", err)
 	}

@@ -147,10 +147,25 @@ func (r *Repository) FindPublicAuthorProfile(ctx context.Context, username strin
 		return PublicAuthorProfile{}, 0, fmt.Errorf("count author follows: %w", err)
 	}
 
+	const bookmarkCountQuery = `
+		select count(*)
+		from article_bookmarks b
+		join articles a on a.id = b.article_id
+		where a.author_id = $1
+			and a.status = 'published'
+			and a.deleted_at is null
+			and b.deleted_at is null
+	`
+	if err := r.db.QueryRow(ctx, bookmarkCountQuery, author.ID).Scan(&author.BookmarkCount); err != nil {
+		return PublicAuthorProfile{}, 0, fmt.Errorf("count author bookmarks: %w", err)
+	}
+
 	const articleQuery = `
 		select
 			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
-			a.title, a.summary, a.status, a.published_at, a.created_at, a.updated_at
+			a.title, a.summary, a.status, a.view_count,
+			(select count(*) from article_bookmarks b where b.article_id = a.id and b.deleted_at is null) as bookmark_count,
+			a.published_at, a.created_at, a.updated_at
 		from articles a
 		join modules m on m.id = a.module_id
 		join users u on u.id = a.author_id
@@ -177,6 +192,8 @@ func (r *Repository) FindPublicAuthorProfile(ctx context.Context, username strin
 			&article.Title,
 			&article.Summary,
 			&article.Status,
+			&article.ViewCount,
+			&article.BookmarkCount,
 			&article.PublishedAt,
 			&article.CreatedAt,
 			&article.UpdatedAt,

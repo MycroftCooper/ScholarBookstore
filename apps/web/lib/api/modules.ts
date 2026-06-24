@@ -14,6 +14,12 @@ export type ModuleSummary = {
   updatedAt: string;
 };
 
+export type ModuleModerator = {
+  moduleId: number;
+  userId: number;
+  createdAt: string;
+};
+
 export function listModules(includeInactive = false) {
   return apiRequest<ModuleSummary[]>(
     `/modules${includeInactive ? "?includeInactive=true" : ""}`,
@@ -51,5 +57,24 @@ export function updateModule(
   return apiRequest<ModuleSummary>(`/admin/modules/${id}`, {
     method: "PATCH",
     body: JSON.stringify(input),
+  });
+}
+
+export function deleteModule(id: number) {
+  return apiRequest<{ ok: boolean }>(`/admin/modules/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function addModuleModerator(moduleId: number, userId: number) {
+  return apiRequest<ModuleModerator>(`/admin/modules/${moduleId}/moderators`, {
+    method: "POST",
+    body: JSON.stringify({ userId }),
+  });
+}
+
+export function removeModuleModerator(moduleId: number, userId: number) {
+  return apiRequest<{ ok: boolean }>(`/admin/modules/${moduleId}/moderators/${userId}`, {
+    method: "DELETE",
   });
 }

@@ -1,7 +1,8 @@
 import Link from "next/link";
 
 const footerLinks = [
-  ["\u9886\u57df", "/modules"],
+  ["\u5173\u4e8e", "/about"],
+  ["\u9886\u57df", "/domain"],
   ["\u53d1\u73b0", "/discover"],
   ["\u6295\u7a3f", "/me/submit"],
   ["\u4e2a\u4eba\u4e2d\u5fc3", "/me"],

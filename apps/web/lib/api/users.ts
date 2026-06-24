@@ -1,5 +1,21 @@
-import { type ArticleSummary } from "./articles";
 import { apiRequest } from "./client";
+
+export type AuthorArticle = {
+  id: number;
+  moduleId: number;
+  moduleSlug: string;
+  moduleName: string;
+  authorId: number;
+  authorUsername: string;
+  title: string;
+  summary: string;
+  status: string;
+  viewCount: number;
+  bookmarkCount: number;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type PublicAuthorProfile = {
   id: number;
@@ -11,7 +27,8 @@ export type PublicAuthorProfile = {
   publishedArticleCount: number;
   followersCount: number;
   followingCount: number;
-  articles: ArticleSummary[];
+  bookmarkCount: number;
+  articles: AuthorArticle[];
 };
 
 export function getPublicAuthorProfile(username: string) {

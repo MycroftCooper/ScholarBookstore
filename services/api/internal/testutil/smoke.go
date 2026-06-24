@@ -140,6 +140,28 @@ returning id`, domainID, slug, name).Scan(&id)
 	return id
 }
 
+func (e *SmokeEnv) SeedDomainOwner(domainID int64, userID int64) {
+	e.T.Helper()
+	_, err := e.DB.Exec(e.Ctx, `
+insert into domain_owners (domain_id, user_id)
+values ($1, $2)
+on conflict do nothing`, domainID, userID)
+	if err != nil {
+		e.T.Fatalf("seed domain owner: %v", err)
+	}
+}
+
+func (e *SmokeEnv) SeedModuleModerator(moduleID int64, userID int64) {
+	e.T.Helper()
+	_, err := e.DB.Exec(e.Ctx, `
+insert into module_moderators (module_id, user_id)
+values ($1, $2)
+on conflict do nothing`, moduleID, userID)
+	if err != nil {
+		e.T.Fatalf("seed module moderator: %v", err)
+	}
+}
+
 func (e *SmokeEnv) Request(method, path string, body interface{}, cookies ...*http.Cookie) Response {
 	e.T.Helper()
 
