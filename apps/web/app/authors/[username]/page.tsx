@@ -30,7 +30,7 @@ export default function AuthorProfilePage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const username = params.username ? decodeURIComponent(params.username) : "";
+    const username = params?.username ? decodeURIComponent(params.username) : "";
     if (!username) {
       setError("用户不存在");
       setLoading(false);
@@ -58,7 +58,7 @@ export default function AuthorProfilePage() {
         setError("作者主页加载失败，请稍后重试");
       })
       .finally(() => setLoading(false));
-  }, [params.username]);
+  }, [params?.username]);
 
   const visibleArticles = useMemo(() => {
     const keyword = query.trim().toLowerCase();

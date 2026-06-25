@@ -136,13 +136,12 @@ export function SiteHeader() {
       <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 py-4 md:px-6 lg:px-8">
         <Link
           href="/"
-          className="flex min-w-0 items-center gap-3 text-lg font-semibold text-[var(--color-ink)]"
+          className="flex min-w-0 items-center gap-3 text-lg font-black text-[var(--color-ink)]"
         >
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-[#161a1f] text-sm text-[var(--color-accent)]">
-            G
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#15191f] text-base font-black text-[var(--color-accent)] shadow-[0_10px_26px_rgba(15,23,42,0.16)]">
+            游
           </span>
-          <span className="hidden truncate sm:inline">GameScholarBookstore</span>
-          <span className="sm:hidden">GSB</span>
+          <span className="truncate">游学书屋</span>
         </Link>
 
         <nav className="hidden items-center gap-10 text-sm font-semibold md:flex">

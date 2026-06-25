@@ -12,8 +12,8 @@ export function SiteFooter() {
   return (
     <footer className="relative border-t border-[var(--color-line)] px-4 py-8 text-sm text-[var(--color-muted)] md:px-6 lg:px-8">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 md:flex-row">
-        <div className="font-mono text-xs">
-          GameScholarBookstore
+        <div className="text-xs font-semibold">
+          游学书屋
         </div>
         <nav className="flex flex-wrap justify-center gap-x-9 gap-y-3">
           {footerLinks.map(([label, href], index) => (

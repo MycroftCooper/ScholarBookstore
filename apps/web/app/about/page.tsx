@@ -24,7 +24,7 @@ export default function AboutPage() {
           <span>//</span>
           <span>About</span>
           <span>//</span>
-          <span>技术星球</span>
+          <span>游学书屋</span>
         </div>
 
         <section className="relative overflow-hidden rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-7 shadow-[var(--shadow-soft)] md:p-9">
@@ -34,10 +34,10 @@ export default function AboutPage() {
           }} />
           <div className="relative max-w-3xl">
             <h1 className="text-3xl font-semibold leading-tight text-[var(--color-ink)] md:text-4xl">
-              关于技术星球
+              关于游学书屋
             </h1>
             <p className="mt-4 text-sm leading-7 text-[var(--color-muted)] md:text-base">
-              技术星球是一个围绕游戏研发、工程实践、工具链与产品运营沉淀经验的知识社区。
+              游学书屋是一个围绕游戏研发、工程实践、工具链与产品运营沉淀经验的知识社区。
               我们鼓励作者发布可复用、可讨论、可验证的文章，也希望每一篇内容都能帮助读者少踩一个坑，多打开一条思路。
             </p>
           </div>

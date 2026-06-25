@@ -26,7 +26,7 @@ const emptyOverview: HomeOverviewData = {
 };
 
 const heroSnippets = [
-  "const shelf = new GameScholarBookstore();",
+  "const shelf = createKnowledgeShelf();",
   "shelf.collect('papers', 'design notes');",
   "shelf.connect('players', 'developers');",
   "shelf.publish({ review: 'curated' });",
@@ -61,7 +61,7 @@ export function HomeOverview() {
             {"\u8ba9\u6e38\u620f\u77e5\u8bc6\uff0c\u6210\u4e3a\u6bcf\u4e00\u6b21\u63a2\u7d22\u7684\u5b58\u6863\u70b9"}
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-8 text-[var(--color-muted)]">
-            {"GameScholarBookstore \u6c47\u96c6\u6e38\u620f\u7814\u7a76\u3001\u8bbe\u8ba1\u65b9\u6cd5\u3001\u5f00\u53d1\u7b14\u8bb0\u548c\u73a9\u5bb6\u89c2\u5bdf\uff0c\u7528\u53ef\u6295\u7a3f\u3001\u53ef\u5ba1\u6838\u3001\u53ef\u8ba8\u8bba\u7684\u65b9\u5f0f\u6c89\u6dc0\u957f\u671f\u6709\u4ef7\u503c\u7684\u5185\u5bb9\u3002"}
+            {"游学书屋汇集游戏研究、设计方法、开发笔记和玩家观察，用可投稿、可审核、可讨论的方式沉淀长期有价值的内容。"}
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link

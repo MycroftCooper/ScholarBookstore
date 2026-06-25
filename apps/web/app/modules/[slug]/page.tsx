@@ -6,5 +6,5 @@ import { ModuleShowcase } from "@/components/modules/ModuleShowcase";
 export default function ModuleDetailPage() {
   const params = useParams<{ slug: string }>();
 
-  return <ModuleShowcase slug={params.slug} />;
+  return <ModuleShowcase slug={params?.slug ?? ""} />;
 }

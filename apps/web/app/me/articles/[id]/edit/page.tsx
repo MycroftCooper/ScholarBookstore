@@ -36,7 +36,7 @@ const emptyValues: ArticleEditorValues = {
 
 export default function EditArticlePage() {
   const params = useParams<{ id: string }>();
-  const articleId = Number(params.id);
+  const articleId = Number(params?.id ?? 0);
   const [article, setArticle] = useState<ArticleSummary | null>(null);
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [values, setValues] = useState<ArticleEditorValues>(emptyValues);
