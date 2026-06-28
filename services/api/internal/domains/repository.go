@@ -46,7 +46,7 @@ func (r *Repository) List(ctx context.Context, includeInactive bool) ([]Domain, 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate domains: %w", err)
 	}
-	return items, nil
+	return r.withOwners(ctx, items)
 }
 
 func (r *Repository) FindByID(ctx context.Context, id int64, includeInactive bool) (Domain, error) {
@@ -62,6 +62,11 @@ func (r *Repository) FindByID(ctx context.Context, id int64, includeInactive boo
 	if err != nil {
 		return Domain{}, err
 	}
+	withOwners, err := r.withOwners(ctx, []Domain{domain})
+	if err != nil {
+		return Domain{}, err
+	}
+	domain = withOwners[0]
 
 	modules, err := r.ListModulesByDomain(ctx, domain.ID, includeInactive)
 	if err != nil {
@@ -192,6 +197,58 @@ func (r *Repository) RemoveOwner(ctx context.Context, domainID int64, userID int
 		return fmt.Errorf("remove domain owner: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) withOwners(ctx context.Context, items []Domain) ([]Domain, error) {
+	if len(items) == 0 {
+		return items, nil
+	}
+
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+
+	const query = `
+		select
+			o.domain_id,
+			o.user_id,
+			u.username,
+			u.avatar_url,
+			o.created_at
+		from domain_owners o
+		join users u on u.id = o.user_id and u.deleted_at is null
+		where o.domain_id = any($1)
+		order by o.created_at asc, o.user_id asc
+	`
+	rows, err := r.db.Query(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list domain owners: %w", err)
+	}
+	defer rows.Close()
+
+	ownersByDomain := map[int64][]DomainOwnerUser{}
+	for rows.Next() {
+		var owner DomainOwnerUser
+		if err := rows.Scan(
+			&owner.DomainID,
+			&owner.UserID,
+			&owner.Username,
+			&owner.AvatarURL,
+			&owner.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan domain owner: %w", err)
+		}
+		ownersByDomain[owner.DomainID] = append(ownersByDomain[owner.DomainID], owner)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate domain owners: %w", err)
+	}
+
+	for i := range items {
+		items[i].Owners = ownersByDomain[items[i].ID]
+	}
+	return items, nil
 }
 
 func (r *Repository) findOne(ctx context.Context, query string, args ...interface{}) (Domain, error) {

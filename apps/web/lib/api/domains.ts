@@ -10,6 +10,7 @@ export type DomainSummary = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  owners?: DomainOwnerUser[];
   modules?: ModuleSummary[];
 };
 
@@ -17,6 +18,11 @@ export type DomainOwner = {
   domainId: number;
   userId: number;
   createdAt: string;
+};
+
+export type DomainOwnerUser = DomainOwner & {
+  username: string;
+  avatarUrl: string;
 };
 
 export function listDomains(includeInactive = false) {

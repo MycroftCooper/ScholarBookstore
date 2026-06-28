@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { UserAvatar } from "@/components/users/UserAvatar";
+import { ApiError } from "@/lib/api/client";
+import { getAdminTaskStats } from "@/lib/api/adminTasks";
 import { getCurrentUser, logout, type CurrentUser } from "@/lib/api/auth";
 import { unreadNotificationCount } from "@/lib/api/notifications";
 
@@ -18,6 +20,7 @@ export function SiteHeader() {
   const pathname = usePathname();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [canEnterAdmin, setCanEnterAdmin] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -35,6 +38,19 @@ export function SiteHeader() {
     getCurrentUser()
       .then((currentUser) => {
         setUser(currentUser);
+        if (currentUser.role === "admin" || currentUser.role === "reviewer") {
+          setCanEnterAdmin(true);
+        } else {
+          getAdminTaskStats()
+            .then(() => setCanEnterAdmin(true))
+            .catch((err) => {
+              if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+                setCanEnterAdmin(false);
+                return;
+              }
+              setCanEnterAdmin(false);
+            });
+        }
         return unreadNotificationCount();
       })
       .then((result) => setUnreadCount(result.count))
@@ -94,9 +110,14 @@ export function SiteHeader() {
               {"\u6211\u7684\u6536\u85cf"}
             </HeaderMenuLink>
             <HeaderMenuLink href="/me/notifications" onClick={() => setMenuOpen(false)}>
-              {"\u901a\u77e5"}
+              消息
               {unreadCount > 0 ? ` ${unreadCount}` : ""}
             </HeaderMenuLink>
+            {canEnterAdmin && (
+              <HeaderMenuLink href="/admin/dashboard" onClick={() => setMenuOpen(false)}>
+                管理后台
+              </HeaderMenuLink>
+            )}
             <button
               type="button"
               onClick={handleLogout}
@@ -108,11 +129,12 @@ export function SiteHeader() {
         )}
       </div>
     );
-  }, [loaded, menuOpen, unreadCount, user]);
+  }, [canEnterAdmin, loaded, menuOpen, unreadCount, user]);
 
   async function handleLogout() {
     await logout();
     setUser(null);
+    setCanEnterAdmin(false);
     setMenuOpen(false);
     window.location.href = "/";
   }

@@ -774,14 +774,16 @@
 
 - 必须登录。
 
-## 15. 举报管理页 `/admin/reports`
+## 15. 举报处理入口 `/admin/tasks`
 
 用途：
 
-- reviewer/admin 查看和处理文章举报。
+- reviewer/admin 在统一待办页查看和处理文章举报。原独立 `/admin/reports` 页面已删除。
 
 调用 API：
 
+- `GET /api/v1/admin/tasks?type=content_report`
+- `POST /api/v1/admin/tasks/{id}/actions`
 - `GET /api/v1/admin/reports`
 - `POST /api/v1/admin/reports/{id}/resolve`
 
@@ -791,7 +793,7 @@
 
 空状态：
 
-- 无举报时展示"暂无举报"。
+- 无举报待办时展示"暂无待办"。
 
 ## 12. 管理后台 `/admin`
 

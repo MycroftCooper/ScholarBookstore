@@ -18,7 +18,7 @@
 | `/admin/domains` | 领域管理 | admin |
 | `/admin/users` | 用户管理 | admin |
 | `/admin/tags` | Tag 管理 | admin |
-| `/admin/reports` | 举报管理 | reviewer+ |
+| `/admin/tasks` | 待办事项（文章审核 / 举报处理 / 角色申请） | reviewer+ |
 | `/admin/dashboard` | 数据看板 | reviewer+ |
 
 **通用要求**：
@@ -230,7 +230,7 @@ admin 管理所有用户角色与状态（仅 admin 可访问）。
 
 - 可修改：角色（user / reviewer / admin）、状态（active / disabled）
 - 不可修改：用户名、邮箱
-- 操作日志记录（TODO：是否记录操作审计后续确认）
+- 操作日志记录（已实现 `audit_logs`；后台写操作成功后记录操作者、动作、对象、范围、IP、User-Agent 和 detail）
 
 ### 7.4 约束
 
@@ -291,38 +291,25 @@ admin 管理全站 Tag（仅 admin 可访问）。
 
 ---
 
-## 9. `/admin/reports` — 举报管理
+## 9. `/admin/tasks` — 待办事项与举报处理
 
 ### 9.1 功能
 
-审核员处理用户举报。
+审核员在统一待办页处理文章审核、举报处理、角色申请等任务。原独立 `/admin/reports` 页面已删除；举报任务以 `content_report` 类型并入 `/admin/tasks`。
 
-### 9.2 举报列表
+### 9.2 举报处理
 
-- 展示所有举报记录（分页，时间倒序）
-- 筛选：按状态（pending / resolved）、按举报原因
+- 展示举报待办记录（分页，时间倒序）
+- 筛选：任务类型、状态、优先级、所属领域/版块、处理人、提交时间
 - 每项展示：举报人、被举报文章、举报原因、补充说明、举报时间、处理状态
-- 操作：查看被举报文章 → 下架 或 驳回举报
+- 操作：通过、驳回、下架、忽略，所有操作写入操作日志
 
-### 9.3 处理举报
-
-**下架文章**：
-1. 审核员查看举报详情和被举报文章
-2. 确认违规 → 下架文章（`published` → `archived`）
-3. 举报标记为"已处理"
-4. 可填写处理说明
-
-**驳回举报**：
-1. 审核员认为文章无违规
-2. 举报标记为"已驳回"
-3. 可填写驳回说明
-
-### 9.4 页面状态
+### 9.3 页面状态
 
 | 状态 | 展示 |
 | --- | --- |
-| 正常 | 举报列表（分页+筛选） |
-| 空状态 | "暂无举报" |
+| 正常 | 待办列表（分页+筛选） |
+| 空状态 | "暂无待办" |
 | 加载失败 | 错误提示 + 重试 |
 | 无权访问 | 403 |
 
@@ -450,5 +437,5 @@ admin 管理全站 Tag（仅 admin 可访问）。
 - [x] 后端已实现并有测试：举报处理参数规则，包括 rejected 不可下架、resolved 可携带下架标记。
 - [~] 后端已实现但测试不足：后台数据看板 API，当前已实现查询，尚缺 repository 集成测试。
 - [~] 后端已实现但测试不足：评论管理、收藏、关注、通知既有模块，仍需补更多 service/repository 测试。
-- [x] 前端毛坯：`/admin/users`、`/admin/tags`、`/admin/dashboard`、`/admin/reports` 可用于手动验证 API。
+- [x] 前端后台：`/admin/dashboard`、`/admin/tasks`、`/admin/domains`、`/admin/modules`、`/admin/users`、`/admin/roles`、`/admin/audit-logs` 已接入真实接口；`/admin/reports` 已删除，举报处理并入 `/admin/tasks`；`/admin/tags` 仍是早期验证页，后续如继续保留需统一后台壳和视觉风格。
 - [defer] 后续迭代：审计日志、复杂运营图表、可视化美化。

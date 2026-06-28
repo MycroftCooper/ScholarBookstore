@@ -225,3 +225,17 @@ published -> pending_review revision -> published replacement
 补充：领域主由 admin 通过 `POST /api/v1/admin/domains/{id}/owners` 指定，并可通过对应 DELETE 接口移除；领域主不能自行任命其它领域主。
 
 补充：版块删除是高风险操作，禁止级联删除文章。删除版块时必须将版块内文章统一转为 `archived` 下架状态，并且公开查询必须过滤已删除或停用版块。
+
+## 2026-06-28 补充：后台待办与审计权限
+
+- `moderation_tasks` 是后台待办的统一入口，列表、详情、处理动作必须基于 `domain_id` 和 `module_id` 做 scoped 权限过滤。
+- admin 可查看和处理全站待办。
+- 领域主可查看和处理其 `domain_owners.domain_id` 范围内待办。
+- 版主可查看和处理其 `module_moderators.module_id` 范围内待办。
+- 普通用户不能通过前端入口或直接请求处理后台待办。
+- 前端页眉后台入口通过后台待办统计接口探测权限；入口隐藏只作为体验优化，安全边界仍在后端。
+- 驳回、下架、忽略举报必须提供备注或原因。
+- 后台待办处理动作必须写入 `audit_logs`，记录操作者、动作、对象、领域/版块范围和备注。
+- 除待办外，其它后台写操作统一按“管理操作命令”审计：接口成功后写入 `audit_logs`，接口失败不写入。
+- 第一版 `GET /api/v1/admin/audit-logs` 仅 admin 可访问；后续如开放给领域主/版主，必须按 `domain_id` / `module_id` 过滤。
+- 审计日志禁止在普通后台中提供删除或编辑能力。

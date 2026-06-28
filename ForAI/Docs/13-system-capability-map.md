@@ -25,7 +25,7 @@
 | 收藏 | 默认收藏夹、自定义收藏夹、收藏/取消、移动、删除转移 | `/api/v1/me/bookmark-collections`、`/api/v1/articles/{id}/bookmark`、`/api/v1/me/bookmarks` | `bookmark_collections`、`article_bookmarks` | user+ | `/me/bookmarks` | `[x] 已实现并有测试` | `[x] 已同步` |
 | 关注 | 关注/取关、关注列表、粉丝列表、作者页关注状态 | `/api/v1/users/{username}/follow`、`/api/v1/me/following`、`/api/v1/me/followers` | `user_follows` | user+ | `/me/following`、`/me/followers`、作者页 | `[x] 已实现并有测试` | `[x] 已同步` |
 | 通知 | 我的通知、未读数、单条已读、全部已读 | `/api/v1/me/notifications/*` | `notifications` | user+ | `/me/notifications` | `[x] 已实现并有测试` | `[x] 已同步` |
-| 举报 | 创建举报、后台列表、驳回、处理并下架 | `/api/v1/articles/{id}/reports`、`/api/v1/admin/reports/*` | `article_reports`、`articles` | user+/reviewer/admin | `/admin/reports` | `[x] 已实现并有测试` | `[x] 已同步` |
+| 举报 | 创建举报、后台列表、驳回、处理并下架 | `/api/v1/articles/{id}/reports`、`/api/v1/admin/reports/*` | `article_reports`、`articles` | user+/reviewer/admin | `/admin/tasks` | `[x] 已实现并有测试` | `[x] 已同步` |
 | Dashboard | 基础统计、30 天趋势 | `/api/v1/admin/dashboard` | 多表聚合 | reviewer/admin | `/admin/dashboard` | `[~] 已实现但测试不足` | `[x] 已同步` |
 | 上传 | 头像上传、文章图片上传、本地 uploads 存储 | `/api/v1/me/avatar`、`/api/v1/uploads/article-images` | `article_images` | user+ | 投稿页/资料页 | `[~] 已实现但测试不足` | `[x] 已同步` |
 | PWA | 安装、离线、manifest、service worker | 暂无 | 暂无 | public | 暂无 | `[defer] 后续迭代` | `[x] 已标注 defer` |

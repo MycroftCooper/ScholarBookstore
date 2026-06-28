@@ -76,6 +76,8 @@ func (e *SmokeEnv) Reset() {
 	e.T.Helper()
 	_, err := e.DB.Exec(e.Ctx, `
 truncate table
+  audit_logs,
+  moderation_tasks,
   article_images,
   article_reports,
   article_bookmarks,

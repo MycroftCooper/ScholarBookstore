@@ -11,6 +11,7 @@ type Domain struct {
 	IsActive    bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	Owners      []DomainOwnerUser
 	Modules     []DomainModule
 }
 
@@ -29,20 +30,29 @@ type DomainModule struct {
 }
 
 type PublicDomain struct {
-	ID          int64          `json:"id"`
-	Slug        string         `json:"slug"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	SortOrder   int            `json:"sortOrder"`
-	IsActive    bool           `json:"isActive"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
-	Modules     []DomainModule `json:"modules,omitempty"`
+	ID          int64             `json:"id"`
+	Slug        string            `json:"slug"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	SortOrder   int               `json:"sortOrder"`
+	IsActive    bool              `json:"isActive"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	UpdatedAt   time.Time         `json:"updatedAt"`
+	Owners      []DomainOwnerUser `json:"owners,omitempty"`
+	Modules     []DomainModule    `json:"modules,omitempty"`
 }
 
 type DomainOwner struct {
 	DomainID  int64     `json:"domainId"`
 	UserID    int64     `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type DomainOwnerUser struct {
+	DomainID  int64     `json:"domainId"`
+	UserID    int64     `json:"userId"`
+	Username  string    `json:"username"`
+	AvatarURL string    `json:"avatarUrl"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -71,6 +81,7 @@ func ToPublic(domain Domain, includeModules bool) PublicDomain {
 		IsActive:    domain.IsActive,
 		CreatedAt:   domain.CreatedAt,
 		UpdatedAt:   domain.UpdatedAt,
+		Owners:      domain.Owners,
 	}
 	if includeModules {
 		out.Modules = domain.Modules

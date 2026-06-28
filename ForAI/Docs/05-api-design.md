@@ -1271,3 +1271,42 @@
 - `PATCH /api/v1/me/bookmark-collections/{id}` 重命名收藏夹。
 - `DELETE /api/v1/me/bookmark-collections/{id}` 删除非默认收藏夹，夹内收藏转移到默认收藏夹。
 - `PATCH /api/v1/me/bookmarks/{id}` 将已有收藏移动到其他收藏夹。
+
+## 19. 2026-06-28 管理后台待办与审计补充
+
+### 19.1 待办事项
+
+- `GET /api/v1/admin/tasks/stats`：登录后可访问；admin 返回全站待办统计，领域主/版主返回自己 scope 内统计，无权限用户返回空统计或不可见结果。
+- `GET /api/v1/admin/tasks`：登录后可访问；支持 `taskType`、`status`、`priority`、`domainId`、`moduleId`、`assigneeId`、`page`、`pageSize`。
+- `GET /api/v1/admin/tasks/{id}`：返回待办详情，含文章或举报对象预览。
+- `POST /api/v1/admin/tasks/{id}/approve`：文章审核任务通过。
+- `POST /api/v1/admin/tasks/{id}/reject`：文章审核任务驳回；请求 `{ "note": "原因" }`，原因必填。
+- `POST /api/v1/admin/tasks/{id}/take-down`：举报任务处理并下架内容；请求 `{ "note": "原因" }`，原因必填。
+- `POST /api/v1/admin/tasks/{id}/ignore`：举报任务忽略；请求 `{ "note": "原因" }`，原因必填。
+
+权限规则：
+
+- admin 可查看和处理全站待办。
+- 领域主仅可查看和处理自己领域内待办。
+- 版主仅可查看和处理自己版块内待办。
+- 文章投稿进入 `pending_review` 时自动生成 `article_review` 待办。
+- 文章举报创建成功后自动生成 `content_report` 待办。
+- 待办处理动作会写入 `audit_logs`。
+
+### 19.2 操作记录
+
+- `GET /api/v1/admin/audit-logs`：admin only；查询后台操作记录。
+- 支持筛选：`action`、`actorId`、`targetType`、`targetId`、`domainId`、`moduleId`、`page`、`pageSize`。
+
+当前会记录的后台管理操作包括：
+
+- 领域：创建、更新、设置领域主、移除领域主。
+- 版块：创建、更新、归档、设置版主、移除版主。
+- 用户：后台更新角色或状态。
+- Tag：更新、删除、合并。
+- 文章：审核通过、审核驳回、下架、恢复、精选状态更新。
+- 评论：隐藏、恢复、删除。
+- 举报：处理举报。
+- 待办：通过、驳回、下架、忽略。
+
+说明：路由级审计只在请求成功后写入；失败请求不会生成操作记录。待办处理会额外记录任务 ID 和备注。

@@ -12,12 +12,18 @@ export type ModuleSummary = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  moderators?: ModuleModeratorUser[];
 };
 
 export type ModuleModerator = {
   moduleId: number;
   userId: number;
   createdAt: string;
+};
+
+export type ModuleModeratorUser = ModuleModerator & {
+  username: string;
+  avatarUrl: string;
 };
 
 export function listModules(includeInactive = false) {

@@ -22,24 +22,3 @@ export function createArticleReport(articleId: number, reason: string) {
     body: JSON.stringify({ reason }),
   });
 }
-
-export function listAdminReports(status?: ArticleReport["status"]) {
-  const params = new URLSearchParams();
-  if (status) {
-    params.set("status", status);
-  }
-  const query = params.toString();
-  return apiRequest<ArticleReport[]>(`/admin/reports${query ? `?${query}` : ""}`);
-}
-
-export function resolveReport(
-  id: number,
-  status: "resolved" | "rejected",
-  note: string,
-  archiveArticle = false,
-) {
-  return apiRequest<ArticleReport>(`/admin/reports/${id}/resolve`, {
-    method: "POST",
-    body: JSON.stringify({ status, note, archiveArticle }),
-  });
-}

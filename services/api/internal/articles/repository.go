@@ -267,6 +267,11 @@ func (r *Repository) Create(ctx context.Context, input CreateArticleInput) (Arti
 	if err := r.SetArticleTags(ctx, id, input.Tags); err != nil {
 		return Article{}, err
 	}
+	if input.Status == "pending_review" {
+		if err := r.createReviewTask(ctx, id); err != nil {
+			return Article{}, err
+		}
+	}
 	return r.FindByIDForAuthor(ctx, id, input.AuthorID)
 }
 
@@ -322,6 +327,9 @@ func (r *Repository) CreateRevision(ctx context.Context, originalID int64, autho
 		if err := r.SetArticleTags(ctx, id, *input.Tags); err != nil {
 			return Article{}, err
 		}
+	}
+	if err := r.createReviewTask(ctx, id); err != nil {
+		return Article{}, err
 	}
 	return r.FindByIDForAuthor(ctx, id, authorID)
 }
@@ -398,7 +406,16 @@ func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, in
 		}
 	}
 
-	return r.FindByIDForAuthor(ctx, updatedID, authorID)
+	item, err := r.FindByIDForAuthor(ctx, updatedID, authorID)
+	if err != nil {
+		return Article{}, err
+	}
+	if item.Status == "pending_review" {
+		if err := r.createReviewTask(ctx, updatedID); err != nil {
+			return Article{}, err
+		}
+	}
+	return item, nil
 }
 
 func (r *Repository) ListPendingReview(ctx context.Context, filter AdminArticleFilter, page int, pageSize int) ([]Article, int64, error) {
@@ -664,6 +681,67 @@ func (r *Repository) adminScopeClause(args *[]interface{}, actorID int64, actorR
 		from module_moderators mm
 		where mm.module_id = m.id and mm.user_id = $%d
 	))`, index, index)
+}
+
+func (r *Repository) createReviewTask(ctx context.Context, articleID int64) error {
+	const query = `
+		insert into moderation_tasks (
+			task_type, object_type, object_id, domain_id, module_id,
+			title, summary, status, priority, submitter_id, assignee_id
+		)
+		select
+			'article_review',
+			'article',
+			a.id,
+			m.domain_id,
+			m.id,
+			'文章审核：' || a.title,
+			left(coalesce(a.summary, ''), 500),
+			'pending',
+			0,
+			a.author_id,
+			coalesce(mm.user_id, domain_owner.user_id, admin_user.id)
+		from articles a
+		join modules m on m.id = a.module_id
+		left join lateral (
+			select user_id
+			from module_moderators
+			where module_id = m.id
+			order by created_at asc, user_id asc
+			limit 1
+		) mm on true
+		left join lateral (
+			select user_id
+			from domain_owners
+			where domain_id = m.domain_id
+			order by created_at asc, user_id asc
+			limit 1
+		) domain_owner on mm.user_id is null
+		left join lateral (
+			select id
+			from users
+			where role = 'admin' and status = 'active' and deleted_at is null
+			order by id asc
+			limit 1
+		) admin_user on mm.user_id is null and domain_owner.user_id is null
+		where a.id = $1
+			and a.status = 'pending_review'
+			and a.deleted_at is null
+		on conflict (task_type, object_type, object_id)
+		where status in ('pending', 'processing')
+		do update set
+			title = excluded.title,
+			summary = excluded.summary,
+			domain_id = excluded.domain_id,
+			module_id = excluded.module_id,
+			submitter_id = excluded.submitter_id,
+			assignee_id = excluded.assignee_id,
+			updated_at = now()
+	`
+	if _, err := r.db.Exec(ctx, query, articleID); err != nil {
+		return fmt.Errorf("create article review task: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) findByID(ctx context.Context, id int64) (Article, error) {

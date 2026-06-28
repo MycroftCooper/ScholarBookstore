@@ -14,25 +14,35 @@ type Module struct {
 	IsActive    bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	Moderators  []ModuleModeratorUser
 }
 
 type PublicModule struct {
-	ID          int64     `json:"id"`
-	DomainID    int64     `json:"domainId"`
-	DomainSlug  string    `json:"domainSlug"`
-	DomainName  string    `json:"domainName"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	SortOrder   int       `json:"sortOrder"`
-	IsActive    bool      `json:"isActive"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          int64                 `json:"id"`
+	DomainID    int64                 `json:"domainId"`
+	DomainSlug  string                `json:"domainSlug"`
+	DomainName  string                `json:"domainName"`
+	Slug        string                `json:"slug"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	SortOrder   int                   `json:"sortOrder"`
+	IsActive    bool                  `json:"isActive"`
+	CreatedAt   time.Time             `json:"createdAt"`
+	UpdatedAt   time.Time             `json:"updatedAt"`
+	Moderators  []ModuleModeratorUser `json:"moderators,omitempty"`
 }
 
 type ModuleModerator struct {
 	ModuleID  int64     `json:"moduleId"`
 	UserID    int64     `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type ModuleModeratorUser struct {
+	ModuleID  int64     `json:"moduleId"`
+	UserID    int64     `json:"userId"`
+	Username  string    `json:"username"`
+	AvatarURL string    `json:"avatarUrl"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -66,6 +76,7 @@ func ToPublic(module Module) PublicModule {
 		IsActive:    module.IsActive,
 		CreatedAt:   module.CreatedAt,
 		UpdatedAt:   module.UpdatedAt,
+		Moderators:  module.Moderators,
 	}
 }
 

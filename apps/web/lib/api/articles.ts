@@ -124,10 +124,13 @@ export function listPendingReviews() {
   return apiRequest<ArticleSummary[]>("/admin/articles/reviews");
 }
 
-export function listAdminArticles(status?: ArticleSummary["status"]) {
+export function listAdminArticles(status?: ArticleSummary["status"], pageSize = 100) {
   const params = new URLSearchParams();
   if (status) {
     params.set("status", status);
+  }
+  if (pageSize) {
+    params.set("pageSize", String(pageSize));
   }
   const query = params.toString();
   return apiRequest<ArticleSummary[]>(

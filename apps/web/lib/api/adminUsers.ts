@@ -5,6 +5,7 @@ export type AdminUserFilter = {
   q?: string;
   role?: CurrentUser["role"] | "";
   status?: CurrentUser["status"] | "";
+  pageSize?: number;
 };
 
 export function listAdminUsers(filter: AdminUserFilter = {}) {
@@ -12,6 +13,7 @@ export function listAdminUsers(filter: AdminUserFilter = {}) {
   if (filter.q) params.set("q", filter.q);
   if (filter.role) params.set("role", filter.role);
   if (filter.status) params.set("status", filter.status);
+  if (filter.pageSize) params.set("pageSize", String(filter.pageSize));
   const query = params.toString();
   return apiRequest<CurrentUser[]>(`/admin/users${query ? `?${query}` : ""}`);
 }

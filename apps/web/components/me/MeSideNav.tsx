@@ -4,6 +4,7 @@ type MeSideNavCounts = {
   following?: number;
   bookmarks?: number;
   comments?: number;
+  notifications?: number;
 };
 
 type MeSideNavProps = {
@@ -16,6 +17,7 @@ const navItems = [
   { label: "关注", href: "/me/following", badge: "following" },
   { label: "收藏", href: "/me/bookmarks", badge: "bookmarks" },
   { label: "评论", href: "/me/comments", badge: "comments" },
+  { label: "消息", href: "/me/notifications", badge: "notifications" },
   { label: "文章", href: "/me/articles", badge: "" },
   { label: "设置", href: "/me/profile", badge: "" },
 ] as const;

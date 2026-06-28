@@ -3,6 +3,8 @@ package routes
 import (
 	"context"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -10,6 +12,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"scholarbookstore/services/api/internal/admin"
 	"scholarbookstore/services/api/internal/articles"
 	"scholarbookstore/services/api/internal/auth"
 	"scholarbookstore/services/api/internal/bookmarks"
@@ -86,6 +89,12 @@ func New(deps Dependencies) http.Handler {
 	dashboardRepo := dashboard.NewRepository(deps.DB)
 	dashboardService := dashboard.NewService(dashboardRepo)
 	dashboardHandler := dashboard.NewHandler(dashboardService)
+	adminRepo := admin.NewRepository(deps.DB)
+	adminService := admin.NewService(adminRepo)
+	adminHandler := admin.NewHandler(adminService, articleService, reportService)
+	audit := func(action string, targetType string, targetParam string, detail map[string]string, next http.HandlerFunc) http.HandlerFunc {
+		return audited(adminService, action, targetType, targetParam, detail, next)
+	}
 
 	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(deps.Config.UploadDir))))
 
@@ -125,7 +134,7 @@ func New(deps Dependencies) http.Handler {
 			r.Delete("/articles/{id}/bookmark", bookmarkHandler.Remove)
 			r.Post("/comments/{id}/replies", commentHandler.Reply)
 			r.Put("/comments/{id}/vote", commentHandler.Vote)
-			r.Delete("/comments/{id}", commentHandler.Delete)
+			r.Delete("/comments/{id}", audit("comment_deleted", "comment", "id", nil, commentHandler.Delete))
 			r.Get("/me/articles", articleHandler.ListMine)
 			r.Get("/me/articles/{id}", articleHandler.DetailMine)
 			r.Get("/me/bookmark-collections", bookmarkHandler.ListCollections)
@@ -151,47 +160,108 @@ func New(deps Dependencies) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
 			r.Use(authmiddleware.RequireRole("admin"))
-			r.Post("/admin/domains", domainHandler.Create)
-			r.Patch("/admin/domains/{id}", domainHandler.Update)
-			r.Post("/admin/domains/{id}/owners", domainHandler.AddOwner)
-			r.Delete("/admin/domains/{id}/owners/{userId}", domainHandler.RemoveOwner)
+			r.Get("/admin/audit-logs", adminHandler.ListAuditLogs)
+			r.Post("/admin/domains", audit("domain_create", "domain", "", nil, domainHandler.Create))
+			r.Patch("/admin/domains/{id}", audit("domain_update", "domain", "id", nil, domainHandler.Update))
+			r.Post("/admin/domains/{id}/owners", audit("domain_owner_add", "domain", "id", nil, domainHandler.AddOwner))
+			r.Delete("/admin/domains/{id}/owners/{userId}", audit("domain_owner_remove", "domain", "id", nil, domainHandler.RemoveOwner))
 			r.Get("/admin/users", userHandler.ListAdmin)
-			r.Patch("/admin/users/{id}", userHandler.UpdateAdmin)
+			r.Patch("/admin/users/{id}", audit("user_update", "user", "id", nil, userHandler.UpdateAdmin))
 			r.Get("/admin/tags", tagHandler.List)
-			r.Patch("/admin/tags/{id}", tagHandler.Update)
-			r.Delete("/admin/tags/{id}", tagHandler.Delete)
-			r.Post("/admin/tags/merge", tagHandler.Merge)
+			r.Patch("/admin/tags/{id}", audit("tag_update", "tag", "id", nil, tagHandler.Update))
+			r.Delete("/admin/tags/{id}", audit("tag_delete", "tag", "id", nil, tagHandler.Delete))
+			r.Post("/admin/tags/merge", audit("tag_merge", "tag", "", nil, tagHandler.Merge))
 		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
+			r.Get("/admin/tasks", adminHandler.ListTasks)
+			r.Get("/admin/tasks/stats", adminHandler.TaskStats)
+			r.Get("/admin/tasks/{id}", adminHandler.TaskDetail)
+			r.Post("/admin/tasks/{id}/approve", adminHandler.ApproveTask)
+			r.Post("/admin/tasks/{id}/reject", adminHandler.RejectTask)
+			r.Post("/admin/tasks/{id}/take-down", adminHandler.TakeDownTask)
+			r.Post("/admin/tasks/{id}/ignore", adminHandler.IgnoreTask)
 			r.Get("/admin/articles", articleHandler.ListAdmin)
-			r.Patch("/admin/articles/{id}", articleHandler.UpdateAdmin)
+			r.Patch("/admin/articles/{id}", audit("article_featured_update", "article", "id", nil, articleHandler.UpdateAdmin))
 			r.Get("/admin/articles/reviews", articleHandler.ListPendingReview)
-			r.Post("/admin/articles/{id}/approve", articleHandler.Approve)
-			r.Post("/admin/articles/{id}/reject", articleHandler.Reject)
-			r.Post("/admin/modules", moduleHandler.Create)
-			r.Patch("/admin/modules/{id}", moduleHandler.Update)
-			r.Delete("/admin/modules/{id}", moduleHandler.Delete)
-			r.Post("/admin/modules/{id}/moderators", moduleHandler.AddModerator)
-			r.Delete("/admin/modules/{id}/moderators/{userId}", moduleHandler.RemoveModerator)
+			r.Post("/admin/articles/{id}/approve", audit("article_review_approved", "article", "id", nil, articleHandler.Approve))
+			r.Post("/admin/articles/{id}/reject", audit("article_review_rejected", "article", "id", nil, articleHandler.Reject))
+			r.Post("/admin/modules", audit("module_create", "module", "", nil, moduleHandler.Create))
+			r.Patch("/admin/modules/{id}", audit("module_update", "module", "id", nil, moduleHandler.Update))
+			r.Delete("/admin/modules/{id}", audit("module_archive", "module", "id", nil, moduleHandler.Delete))
+			r.Post("/admin/modules/{id}/moderators", audit("module_moderator_add", "module", "id", nil, moduleHandler.AddModerator))
+			r.Delete("/admin/modules/{id}/moderators/{userId}", audit("module_moderator_remove", "module", "id", nil, moduleHandler.RemoveModerator))
 		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
 			r.Use(authmiddleware.RequireRole("reviewer", "admin"))
-			r.Post("/admin/articles/{id}/archive", articleHandler.Archive)
-			r.Post("/admin/articles/{id}/restore", articleHandler.RestoreArchived)
+			r.Post("/admin/articles/{id}/archive", audit("article_archived", "article", "id", nil, articleHandler.Archive))
+			r.Post("/admin/articles/{id}/restore", audit("article_restored", "article", "id", nil, articleHandler.RestoreArchived))
 			r.Get("/admin/comments", commentHandler.ListAdmin)
-			r.Post("/admin/comments/{id}/hide", commentHandler.Hide)
-			r.Post("/admin/comments/{id}/show", commentHandler.Show)
+			r.Post("/admin/comments/{id}/hide", audit("comment_hidden", "comment", "id", nil, commentHandler.Hide))
+			r.Post("/admin/comments/{id}/show", audit("comment_shown", "comment", "id", nil, commentHandler.Show))
 			r.Get("/admin/reports", reportHandler.ListAdmin)
-			r.Post("/admin/reports/{id}/resolve", reportHandler.Resolve)
+			r.Post("/admin/reports/{id}/resolve", audit("report_resolved", "article_report", "id", nil, reportHandler.Resolve))
 			r.Get("/admin/dashboard", dashboardHandler.Snapshot)
 		})
 	})
 
 	return r
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func audited(adminService *admin.Service, action string, targetType string, targetParam string, detail map[string]string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next(recorder, r)
+		if recorder.status < 200 || recorder.status >= 400 {
+			return
+		}
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return
+		}
+		targetID := int64(0)
+		if targetParam != "" {
+			parsed, err := strconv.ParseInt(chi.URLParam(r, targetParam), 10, 64)
+			if err == nil && parsed > 0 {
+				targetID = parsed
+			}
+		}
+		if targetID == 0 {
+			targetID = 1
+		}
+		logDetail := map[string]string{
+			"method": r.Method,
+			"path":   r.URL.Path,
+		}
+		for key, value := range detail {
+			logDetail[key] = value
+		}
+		if userID := chi.URLParam(r, "userId"); strings.TrimSpace(userID) != "" {
+			logDetail["userId"] = userID
+		}
+		_ = adminService.Audit(r.Context(), admin.AuditLogInput{
+			ActorID:    user.ID,
+			Action:     action,
+			TargetType: targetType,
+			TargetID:   targetID,
+			Detail:     logDetail,
+			IP:         r.RemoteAddr,
+			UserAgent:  r.UserAgent(),
+		})
+	}
 }
 
 func handleHealthz(pool *pgxpool.Pool) http.HandlerFunc {

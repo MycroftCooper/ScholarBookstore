@@ -286,20 +286,20 @@ function CommentTools({
 }) {
   return (
     <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-soft)]">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+      <div className="grid gap-3">
         <input
           value={query}
           onChange={(event) => onQuery(event.target.value)}
           placeholder="搜索评论内容或文章..."
-          className="h-11 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 text-sm text-[var(--color-ink)] outline-none transition focus:border-[var(--color-accent)] xl:max-w-sm"
+          className="h-11 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 text-sm text-[var(--color-ink)] outline-none transition focus:border-[var(--color-accent)]"
         />
-        <div className="flex flex-wrap gap-2">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {tabs.map((item) => (
             <button
               key={item.value}
               type="button"
               onClick={() => onTab(item.value)}
-              className={`h-10 rounded-md border px-4 text-sm font-semibold transition ${
+              className={`h-10 shrink-0 rounded-md border px-4 text-sm font-semibold transition ${
                 tab === item.value
                   ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-black"
                   : "border-[var(--color-line)] bg-[var(--color-surface-solid)] text-[var(--color-muted)] hover:text-[var(--color-ink)]"

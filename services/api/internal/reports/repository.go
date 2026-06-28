@@ -39,6 +39,9 @@ func (r *Repository) Create(ctx context.Context, articleID int64, reporterID int
 		}
 		return Report{}, fmt.Errorf("create article report: %w", err)
 	}
+	if err := r.createReportTask(ctx, id); err != nil {
+		return Report{}, err
+	}
 	return r.FindByID(ctx, id)
 }
 
@@ -144,6 +147,68 @@ func (r *Repository) reportExists(ctx context.Context, db queryer, id int64) (bo
 		return false, fmt.Errorf("check report existence: %w", err)
 	}
 	return exists, nil
+}
+
+func (r *Repository) createReportTask(ctx context.Context, reportID int64) error {
+	const query = `
+		insert into moderation_tasks (
+			task_type, object_type, object_id, domain_id, module_id,
+			title, summary, status, priority, submitter_id, assignee_id
+		)
+		select
+			'content_report',
+			'article_report',
+			ar.id,
+			m.domain_id,
+			m.id,
+			'文章举报：' || a.title,
+			left(ar.reason, 500),
+			'pending',
+			1,
+			ar.reporter_id,
+			coalesce(mm.user_id, domain_owner.user_id, admin_user.id)
+		from article_reports ar
+		join articles a on a.id = ar.article_id
+		join modules m on m.id = a.module_id
+		left join lateral (
+			select user_id
+			from module_moderators
+			where module_id = m.id
+			order by created_at asc, user_id asc
+			limit 1
+		) mm on true
+		left join lateral (
+			select user_id
+			from domain_owners
+			where domain_id = m.domain_id
+			order by created_at asc, user_id asc
+			limit 1
+		) domain_owner on mm.user_id is null
+		left join lateral (
+			select id
+			from users
+			where role = 'admin' and status = 'active' and deleted_at is null
+			order by id asc
+			limit 1
+		) admin_user on mm.user_id is null and domain_owner.user_id is null
+		where ar.id = $1
+			and ar.status = 'pending'
+			and ar.deleted_at is null
+		on conflict (task_type, object_type, object_id)
+		where status in ('pending', 'processing')
+		do update set
+			title = excluded.title,
+			summary = excluded.summary,
+			domain_id = excluded.domain_id,
+			module_id = excluded.module_id,
+			submitter_id = excluded.submitter_id,
+			assignee_id = excluded.assignee_id,
+			updated_at = now()
+	`
+	if _, err := r.db.Exec(ctx, query, reportID); err != nil {
+		return fmt.Errorf("create report task: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) findByID(ctx context.Context, db queryer, id int64) (Report, error) {

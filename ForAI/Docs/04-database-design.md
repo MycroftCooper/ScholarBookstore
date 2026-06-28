@@ -472,3 +472,38 @@
 - `articles` 新增 `source_type varchar(20) not null default 'original'`。
 - 允许值：`original` 表示原创，`reprint` 表示转载。
 - 文章详情页的“文章信息”展示该字段，不再使用许可协议占位。
+
+## 2026-06-28 补充：管理后台待办与审计
+
+新增 `moderation_tasks`，用于第一版后台的轻量待办事项。
+
+核心字段：
+
+- `task_type`：`article_review`、`content_report`、`comment_report` 等。
+- `object_type` / `object_id`：关联对象，当前第一版使用 `article` 和 `article_report`。
+- `domain_id` / `module_id`：权限范围字段，后端查询和处理动作必须按这两个字段校验 scope。
+- `status`：`pending`、`processing`、`approved`、`rejected`、`resolved`、`ignored`、`cancelled`。
+- `submitter_id` / `assignee_id`：提交人与分配处理人。
+- `resolution` / `resolution_note` / `resolved_at`：处理结果。
+
+索引：
+
+- `moderation_tasks_open_object_unique`：同一对象同一任务类型只允许一个未关闭待办。
+- `moderation_tasks_status_created_idx`、`moderation_tasks_assignee_status_idx`、`moderation_tasks_domain_status_idx`、`moderation_tasks_module_status_idx` 用于后台筛选。
+
+新增 `audit_logs`，用于记录后台处理动作。
+
+核心字段：
+
+- `actor_id`
+- `action`
+- `target_type`
+- `target_id`
+- `domain_id`
+- `module_id`
+- `detail jsonb`
+- `ip`
+- `user_agent`
+- `created_at`
+
+第一版已接入待办处理动作审计：文章审核通过、文章驳回、内容下架、举报忽略。

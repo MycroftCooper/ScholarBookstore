@@ -411,7 +411,7 @@ powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
 - [x] 后台数据看板：基础统计和 30 天趋势。
 - [x] 举报处理增强：支持“处理并下架”，举报状态更新与文章下架在同一事务中完成。
 - [x] 公开文章搜索升级：从 `ILIKE` 升级为 PostgreSQL full text search，并增加 GIN 索引 migration。
-- [x] 前端后台毛坯页：`/admin/users`、`/admin/tags`、`/admin/dashboard`；`/admin/reports` 增加处理并下架。
+- [x] 前端后台毛坯页：`/admin/users`、`/admin/tags`、`/admin/dashboard`；举报处理已并入 `/admin/tasks`。
 - [~] 测试覆盖：新增 users、tags、reports service 测试；bookmarks、comments、follows、notifications 仍需继续补充更细测试。
 
 当前验收命令：

@@ -62,7 +62,7 @@ func (r *Repository) List(ctx context.Context, includeInactive bool) ([]Module, 
 		return nil, fmt.Errorf("iterate modules: %w", err)
 	}
 
-	return modules, nil
+	return r.withModerators(ctx, modules)
 }
 
 func (r *Repository) FindBySlug(ctx context.Context, slug string) (Module, error) {
@@ -285,7 +285,63 @@ func (r *Repository) findOne(ctx context.Context, query string, args ...interfac
 	if err != nil {
 		return Module{}, fmt.Errorf("find module: %w", err)
 	}
-	return module, nil
+	withModerators, err := r.withModerators(ctx, []Module{module})
+	if err != nil {
+		return Module{}, err
+	}
+	return withModerators[0], nil
+}
+
+func (r *Repository) withModerators(ctx context.Context, items []Module) ([]Module, error) {
+	if len(items) == 0 {
+		return items, nil
+	}
+
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+
+	const query = `
+		select
+			mm.module_id,
+			mm.user_id,
+			u.username,
+			u.avatar_url,
+			mm.created_at
+		from module_moderators mm
+		join users u on u.id = mm.user_id and u.deleted_at is null
+		where mm.module_id = any($1)
+		order by mm.created_at asc, mm.user_id asc
+	`
+	rows, err := r.db.Query(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list module moderators: %w", err)
+	}
+	defer rows.Close()
+
+	moderatorsByModule := map[int64][]ModuleModeratorUser{}
+	for rows.Next() {
+		var moderator ModuleModeratorUser
+		if err := rows.Scan(
+			&moderator.ModuleID,
+			&moderator.UserID,
+			&moderator.Username,
+			&moderator.AvatarURL,
+			&moderator.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan module moderator: %w", err)
+		}
+		moderatorsByModule[moderator.ModuleID] = append(moderatorsByModule[moderator.ModuleID], moderator)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate module moderators: %w", err)
+	}
+
+	for i := range items {
+		items[i].Moderators = moderatorsByModule[items[i].ID]
+	}
+	return items, nil
 }
 
 func isUniqueViolation(err error) bool {
