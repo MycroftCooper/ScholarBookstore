@@ -3,6 +3,7 @@ package articles
 import (
 	"context"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -19,10 +20,13 @@ var validSourceTypes = map[string]struct{}{
 	"reprint":  {},
 }
 
+var timeNow = time.Now
+
 type ArticleRepository interface {
 	ListPublished(ctx context.Context, filter PublishedArticleFilter, page int, pageSize int) ([]Article, int64, error)
 	ListAdmin(ctx context.Context, filter AdminArticleFilter, page int, pageSize int) ([]Article, int64, error)
 	FindPublishedByID(ctx context.Context, id int64) (Article, error)
+	FindPreviewModule(ctx context.Context, id int64) (PreviewModule, error)
 	IncrementViewCount(ctx context.Context, id int64) error
 	ListMine(ctx context.Context, authorID int64, status string, page int, pageSize int) ([]Article, int64, error)
 	Create(ctx context.Context, input CreateArticleInput) (Article, error)
@@ -151,6 +155,52 @@ func (s *Service) Create(ctx context.Context, input CreateArticleInput) (PublicA
 		return PublicArticle{}, err
 	}
 	return ToPublic(item, true), nil
+}
+
+func (s *Service) Preview(ctx context.Context, input PreviewArticleInput) (PublicArticle, error) {
+	input.Title = strings.TrimSpace(input.Title)
+	input.Summary = strings.TrimSpace(input.Summary)
+	input.ContentMD = strings.TrimSpace(input.ContentMD)
+	input.SourceType = strings.TrimSpace(input.SourceType)
+	if input.SourceType == "" {
+		input.SourceType = "original"
+	}
+	if input.ModuleID <= 0 || input.AuthorID <= 0 || input.AuthorUsername == "" || !validSourceType(input.SourceType) || !validArticleText(input.Title, input.Summary, input.ContentMD, "draft") {
+		return PublicArticle{}, ErrInvalidInput
+	}
+	tags, ok := normalizeTags(input.Tags)
+	if !ok {
+		return PublicArticle{}, ErrInvalidInput
+	}
+	module, err := s.repo.FindPreviewModule(ctx, input.ModuleID)
+	if err != nil {
+		return PublicArticle{}, err
+	}
+	wordCount, readingMinutes := articleMetrics(input.ContentMD)
+	now := timeNow()
+
+	return PublicArticle{
+		ID:             0,
+		ModuleID:       module.ID,
+		ModuleSlug:     module.Slug,
+		ModuleName:     module.Name,
+		AuthorID:       input.AuthorID,
+		AuthorUsername: input.AuthorUsername,
+		Title:          input.Title,
+		Summary:        input.Summary,
+		ContentMD:      input.ContentMD,
+		SourceType:     input.SourceType,
+		Status:         "draft",
+		PublishedAt:    nil,
+		WordCount:      wordCount,
+		ReadingMinutes: readingMinutes,
+		ViewCount:      0,
+		RevisionCount:  0,
+		IsFeatured:     false,
+		Tags:           previewTags(tags),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}, nil
 }
 
 func (s *Service) UpdateOwn(ctx context.Context, id int64, authorID int64, input UpdateArticleInput) (PublicArticle, error) {
@@ -399,6 +449,19 @@ func normalizeTags(tags []string) ([]string, bool) {
 		return nil, false
 	}
 	return out, true
+}
+
+func previewTags(tags []string) []Tag {
+	out := make([]Tag, 0, len(tags))
+	for _, tag := range tags {
+		out = append(out, Tag{
+			ID:         0,
+			Name:       tag,
+			Slug:       tagSlug(tag),
+			UsageCount: 0,
+		})
+	}
+	return out
 }
 
 func normalizePage(page int, pageSize int) (int, int) {

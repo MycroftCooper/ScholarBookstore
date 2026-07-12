@@ -35,6 +35,30 @@ export function getDomain(id: number) {
   return apiRequest<DomainSummary>(`/domains/${id}`);
 }
 
+export type DomainFollowState = {
+  id: number;
+  slug: string;
+  name: string;
+  following: boolean;
+  followersCount: number;
+};
+
+export function getDomainFollowState(id: number) {
+  return apiRequest<DomainFollowState>(`/domains/${id}/follow`);
+}
+
+export function followDomain(id: number) {
+  return apiRequest<DomainFollowState>(`/domains/${id}/follow`, {
+    method: "POST",
+  });
+}
+
+export function unfollowDomain(id: number) {
+  return apiRequest<DomainFollowState>(`/domains/${id}/follow`, {
+    method: "DELETE",
+  });
+}
+
 export function createDomain(input: {
   slug: string;
   name: string;

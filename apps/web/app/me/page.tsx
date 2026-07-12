@@ -78,7 +78,7 @@ export default function MePage() {
           listMyComments().catch(() => []),
           listNotifications().catch(() => []),
           unreadNotificationCount().catch(() => ({ count: 0 })),
-          listFollowing().catch(() => []),
+          listFollowing().then((page) => page.users).catch(() => []),
           listFollowers().catch(() => []),
         ]);
         setData({

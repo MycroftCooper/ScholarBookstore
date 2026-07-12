@@ -76,7 +76,7 @@ export default function NotificationsPage() {
       listMyComments().catch(() => []),
       listNotifications({ pageSize: 100 }).catch(() => []),
       unreadNotificationCount().catch(() => ({ count: 0 })),
-      listFollowing().catch(() => []),
+      listFollowing().then((page) => page.users).catch(() => []),
       listFollowers().catch(() => []),
     ]);
     setData({
@@ -436,7 +436,7 @@ function MessageList({
                   {!notification.readAt && <UnreadDot />}
                 </div>
                 <Link
-                  href={notification.articleId ? `/articles/${notification.articleId}` : "/me/notifications"}
+                  href={notificationHref(notification)}
                   onClick={() => onOpen(notification)}
                   className="mt-2 block font-semibold leading-6 text-[var(--color-ink)] hover:text-[var(--color-accent-strong)]"
                 >
@@ -452,7 +452,7 @@ function MessageList({
               </div>
               <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
                 {notification.articleId && (
-                  <Link href={`/articles/${notification.articleId}`} onClick={() => onOpen(notification)} className={actionClass}>
+                  <Link href={notificationHref(notification)} onClick={() => onOpen(notification)} className={actionClass}>
                     查看文章
                   </Link>
                 )}
@@ -598,6 +598,14 @@ function ContourLayer() {
       }}
     />
   );
+}
+
+function notificationHref(notification: NotificationItem) {
+  if (!notification.articleId) {
+    return "/me/notifications";
+  }
+  const hash = notification.commentId ? `#comment-${notification.commentId}` : "";
+  return `/articles/${notification.articleId}${hash}`;
 }
 
 function notificationTitle(notification: NotificationItem) {

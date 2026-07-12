@@ -429,10 +429,64 @@
 - `unique index article_reports_pending_unique on article_reports (article_id, reporter_id) where status = 'pending' and deleted_at is null`
 - `index article_reports_status_created_idx on article_reports (status, created_at desc) where deleted_at is null`
 
+### 3.12 module_follows / domain_follows
+
+版块和领域关注关系表。结构与 `user_follows` 保持轻量一致，取关时物理删除记录。
+
+`module_follows`：
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 关注关系 ID |
+| `follower_id` | `bigint` | FK users(id), not null | 关注者 |
+| `module_id` | `bigint` | FK modules(id), not null | 被关注版块 |
+| `created_at` | `timestamptz` | not null | 关注时间 |
+
+`domain_follows`：
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 关注关系 ID |
+| `follower_id` | `bigint` | FK users(id), not null | 关注者 |
+| `domain_id` | `bigint` | FK domains(id), not null | 被关注领域 |
+| `created_at` | `timestamptz` | not null | 关注时间 |
+
+索引：
+
+- `unique index module_follows_unique on module_follows (follower_id, module_id)`
+- `index module_follows_follower_idx on module_follows (follower_id, created_at desc)`
+- `index module_follows_module_idx on module_follows (module_id, created_at desc)`
+- `unique index domain_follows_unique on domain_follows (follower_id, domain_id)`
+- `index domain_follows_follower_idx on domain_follows (follower_id, created_at desc)`
+- `index domain_follows_domain_idx on domain_follows (domain_id, created_at desc)`
+
+### 3.13 user_reports
+
+用户主页举报表。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 举报 ID |
+| `reported_user_id` | `bigint` | FK users(id), not null | 被举报用户 |
+| `reporter_id` | `bigint` | FK users(id), not null | 举报人 |
+| `reason` | `text` | not null | 举报原因 |
+| `status` | `varchar(20)` | not null default `pending` | `pending`、`resolved`、`rejected` |
+| `handled_by` | `bigint` | FK users(id), null | 处理人 |
+| `handled_at` | `timestamptz` | null | 处理时间 |
+| `handle_note` | `text` | not null default '' | 处理说明 |
+| `created_at` | `timestamptz` | not null | 创建时间 |
+| `updated_at` | `timestamptz` | not null | 更新时间 |
+| `deleted_at` | `timestamptz` | null | 软删除时间 |
+
+索引：
+
+- `unique index user_reports_pending_unique on user_reports (reported_user_id, reporter_id) where status = 'pending' and deleted_at is null`
+- `index user_reports_status_created_idx on user_reports (status, created_at desc) where deleted_at is null`
+
 ## 4. 外键策略
 
 - 用户删除不级联删除文章、评论、通知，保留历史内容并使用软删除或禁用。
-- 用户删除时级联删除关注关系（`user_follows`，无论作为关注者还是被关注者）。
+- 用户删除时级联删除关注关系（`user_follows`、`module_follows`、`domain_follows` 中作为关注者的记录；`user_follows` 中作为被关注者的记录）。
 - 版块删除不级联删除文章，默认软删除版块并隐藏入口。
 - 文章删除不物理删除评论和通知。
 - 父评论删除不物理删除子回复，展示时可显示“原评论已删除”或隐藏整组。TODO：具体展示策略后续确认。

@@ -42,13 +42,14 @@ export async function apiRequest<T>(
     headers,
   });
 
-  const body = (await response.json()) as ApiSuccess<T> | ApiErrorBody;
+  const text = await response.text();
+  const body = text ? (JSON.parse(text) as ApiSuccess<T> | ApiErrorBody) : null;
   if (!response.ok) {
-    const errorBody = body as ApiErrorBody;
+    const errorBody = body as ApiErrorBody | null;
     throw new ApiError(
       response.status,
-      errorBody.error?.code ?? "UNKNOWN_ERROR",
-      errorBody.error?.message ?? "\u8bf7\u6c42\u5931\u8d25",
+      errorBody?.error?.code ?? "UNKNOWN_ERROR",
+      errorBody?.error?.message ?? "\u8bf7\u6c42\u5931\u8d25",
     );
   }
 

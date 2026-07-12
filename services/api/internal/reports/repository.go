@@ -45,6 +45,54 @@ func (r *Repository) Create(ctx context.Context, articleID int64, reporterID int
 	return r.FindByID(ctx, id)
 }
 
+func (r *Repository) CreateUser(ctx context.Context, username string, reporterID int64, reason string) (UserReport, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return UserReport{}, fmt.Errorf("begin user report: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var reportedUserID int64
+	err = tx.QueryRow(ctx, `
+		select id
+		from users
+		where lower(username) = lower($1) and status = 'active' and deleted_at is null
+	`, username).Scan(&reportedUserID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return UserReport{}, ErrNotFound
+	}
+	if err != nil {
+		return UserReport{}, fmt.Errorf("find reported user: %w", err)
+	}
+	if reportedUserID == reporterID {
+		return UserReport{}, ErrInvalidInput
+	}
+
+	var id int64
+	err = tx.QueryRow(ctx, `
+		insert into user_reports (reported_user_id, reporter_id, reason)
+		values ($1, $2, $3)
+		returning id
+	`, reportedUserID, reporterID, reason).Scan(&id)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return UserReport{}, ErrConflict
+		}
+		return UserReport{}, fmt.Errorf("create user report: %w", err)
+	}
+	if err := r.createUserReportTask(ctx, tx, id); err != nil {
+		return UserReport{}, err
+	}
+	item, err := r.findUserReportByID(ctx, tx, id)
+	if err != nil {
+		return UserReport{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return UserReport{}, fmt.Errorf("commit user report: %w", err)
+	}
+	return item, nil
+}
+
 func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Report, int64, error) {
 	args := []interface{}{}
 	filter := "ar.deleted_at is null"
@@ -211,6 +259,73 @@ func (r *Repository) createReportTask(ctx context.Context, reportID int64) error
 	return nil
 }
 
+func (r *Repository) createUserReportTask(ctx context.Context, db execQueryer, reportID int64) error {
+	const query = `
+		insert into moderation_tasks (
+			task_type, object_type, object_id, domain_id, module_id,
+			title, summary, status, priority, submitter_id, assignee_id
+		)
+		select
+			'user_report',
+			'user_report',
+			ur.id,
+			null,
+			null,
+			'用户举报：' || reported.username,
+			left(ur.reason, 500),
+			'pending',
+			1,
+			ur.reporter_id,
+			admin_user.id
+		from user_reports ur
+		join users reported on reported.id = ur.reported_user_id
+		left join lateral (
+			select id
+			from users
+			where role = 'admin' and status = 'active' and deleted_at is null
+			order by id asc
+			limit 1
+		) admin_user on true
+		where ur.id = $1
+			and ur.status = 'pending'
+			and ur.deleted_at is null
+		on conflict (task_type, object_type, object_id)
+		where status in ('pending', 'processing')
+		do update set
+			title = excluded.title,
+			summary = excluded.summary,
+			submitter_id = excluded.submitter_id,
+			assignee_id = excluded.assignee_id,
+			updated_at = now()
+	`
+	if _, err := db.Exec(ctx, query, reportID); err != nil {
+		return fmt.Errorf("create user report task: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) findUserReportByID(ctx context.Context, db queryer, id int64) (UserReport, error) {
+	const query = `
+		select
+			ur.id, ur.reported_user_id, reported.username, ur.reporter_id, reporter.username,
+			ur.reason, ur.status, ur.handled_by, handler.username,
+			ur.handled_at, ur.handle_note, ur.created_at, ur.updated_at
+		from user_reports ur
+		join users reported on reported.id = ur.reported_user_id
+		join users reporter on reporter.id = ur.reporter_id
+		left join users handler on handler.id = ur.handled_by
+		where ur.id = $1 and ur.deleted_at is null
+	`
+	item, err := scanUserReport(db.QueryRow(ctx, query, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return UserReport{}, ErrNotFound
+	}
+	if err != nil {
+		return UserReport{}, err
+	}
+	return item, nil
+}
+
 func (r *Repository) findByID(ctx context.Context, db queryer, id int64) (Report, error) {
 	const query = `
 		select
@@ -235,6 +350,11 @@ func (r *Repository) findByID(ctx context.Context, db queryer, id int64) (Report
 
 type queryer interface {
 	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+}
+
+type execQueryer interface {
+	queryer
+	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
 }
 
 func (r *Repository) scanMany(ctx context.Context, query string, args ...interface{}) ([]Report, error) {
@@ -269,6 +389,18 @@ func scanReport(scanner reportScanner) (Report, error) {
 		&item.HandledAt, &item.HandleNote, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return Report{}, fmt.Errorf("scan report: %w", err)
+	}
+	return item, nil
+}
+
+func scanUserReport(scanner reportScanner) (UserReport, error) {
+	var item UserReport
+	if err := scanner.Scan(
+		&item.ID, &item.ReportedUserID, &item.ReportedUsername, &item.ReporterID, &item.ReporterName,
+		&item.Reason, &item.Status, &item.HandledBy, &item.HandledByName,
+		&item.HandledAt, &item.HandleNote, &item.CreatedAt, &item.UpdatedAt,
+	); err != nil {
+		return UserReport{}, fmt.Errorf("scan user report: %w", err)
 	}
 	return item, nil
 }

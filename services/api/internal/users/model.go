@@ -72,18 +72,39 @@ type AuthorArticle struct {
 	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
+type AuthorFollowModule struct {
+	ID          int64     `json:"id"`
+	DomainID    int64     `json:"domainId"`
+	DomainSlug  string    `json:"domainSlug"`
+	DomainName  string    `json:"domainName"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type AuthorFollowDomain struct {
+	ID          int64     `json:"id"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
 type PublicAuthorProfile struct {
-	ID                    int64           `json:"id"`
-	Username              string          `json:"username"`
-	AvatarURL             string          `json:"avatarUrl"`
-	Bio                   string          `json:"bio"`
-	School                string          `json:"school"`
-	Company               string          `json:"company"`
-	PublishedArticleCount int64           `json:"publishedArticleCount"`
-	FollowersCount        int64           `json:"followersCount"`
-	FollowingCount        int64           `json:"followingCount"`
-	BookmarkCount         int64           `json:"bookmarkCount"`
-	Articles              []AuthorArticle `json:"articles"`
+	ID                    int64                `json:"id"`
+	Username              string               `json:"username"`
+	AvatarURL             string               `json:"avatarUrl"`
+	Bio                   string               `json:"bio"`
+	School                string               `json:"school"`
+	Company               string               `json:"company"`
+	PublishedArticleCount int64                `json:"publishedArticleCount"`
+	FollowersCount        int64                `json:"followersCount"`
+	FollowingCount        int64                `json:"followingCount"`
+	BookmarkCount         int64                `json:"bookmarkCount"`
+	Articles              []AuthorArticle      `json:"articles"`
+	FollowingModules      []AuthorFollowModule `json:"followingModules"`
+	FollowingDomains      []AuthorFollowDomain `json:"followingDomains"`
 }
 
 type AuthorProfilePage struct {

@@ -47,7 +47,7 @@ func NewHandler(service *Service) *Handler {
 func (h *Handler) ListPublished(w http.ResponseWriter, r *http.Request) {
 	page, pageSize, ok := httprequest.Pagination(r)
 	if !ok {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 
@@ -59,11 +59,11 @@ func (h *Handler) ListPublished(w http.ResponseWriter, r *http.Request) {
 		Featured:   r.URL.Query().Get("featured") == "true",
 	}, page, pageSize)
 	if errors.Is(err, ErrInvalidInput) {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "查询参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -73,17 +73,17 @@ func (h *Handler) ListPublished(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DetailPublished(w http.ResponseWriter, r *http.Request) {
 	id, ok := httprequest.IDParam(r, "id")
 	if !ok {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 
 	article, err := h.service.FindPublishedByID(r.Context(), id)
 	if errors.Is(err, ErrNotFound) {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -93,13 +93,13 @@ func (h *Handler) DetailPublished(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
 		return
 	}
 
 	var req createArticleRequest
 	if err := httprequest.DecodeJSON(r, &req); err != nil {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 
@@ -114,15 +114,15 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Tags:       req.Tags,
 	})
 	if errors.Is(err, ErrInvalidInput) {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 	if errors.Is(err, ErrNotFound) {
-		response.Error(w, http.StatusForbidden, "FORBIDDEN", "版块不存在或不可投稿", nil)
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "permission denied", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -132,26 +132,64 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}, nil)
 }
 
+func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
+		return
+	}
+
+	var req createArticleRequest
+	if err := httprequest.DecodeJSON(r, &req); err != nil {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
+		return
+	}
+
+	article, err := h.service.Preview(r.Context(), PreviewArticleInput{
+		ModuleID:       req.ModuleID,
+		AuthorID:       user.ID,
+		AuthorUsername: user.Username,
+		Title:          req.Title,
+		Summary:        req.Summary,
+		ContentMD:      req.ContentMD,
+		SourceType:     req.SourceType,
+		Tags:           req.Tags,
+	})
+	if errors.Is(err, ErrInvalidInput) {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "permission denied", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, article, nil)
+}
 func (h *Handler) ListMine(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
 		return
 	}
 
 	page, pageSize, valid := httprequest.Pagination(r)
 	if !valid {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 
 	result, err := h.service.ListMine(r.Context(), user.ID, r.URL.Query().Get("status"), page, pageSize)
 	if errors.Is(err, ErrInvalidInput) {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "状态参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -161,23 +199,23 @@ func (h *Handler) ListMine(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DetailMine(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
 		return
 	}
 
 	id, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 
 	article, err := h.service.FindMineByID(r.Context(), id, user.ID)
 	if errors.Is(err, ErrNotFound) {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -187,19 +225,19 @@ func (h *Handler) DetailMine(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpdateOwn(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
 		return
 	}
 
 	id, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 
 	var req updateArticleRequest
 	if err := httprequest.DecodeJSON(r, &req); err != nil {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 
@@ -212,19 +250,19 @@ func (h *Handler) UpdateOwn(w http.ResponseWriter, r *http.Request) {
 		Tags:       req.Tags,
 	})
 	if errors.Is(err, ErrInvalidInput) {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 	if errors.Is(err, ErrConflict) {
-		response.Error(w, http.StatusConflict, "CONFLICT", "当前文章状态不允许编辑", nil)
+		response.Error(w, http.StatusConflict, "CONFLICT", "article state conflict", nil)
 		return
 	}
 	if errors.Is(err, ErrNotFound) {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -234,19 +272,19 @@ func (h *Handler) UpdateOwn(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListPendingReview(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
 		return
 	}
 
 	page, pageSize, ok := httprequest.Pagination(r)
 	if !ok {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 
 	result, err := h.service.ListPendingReview(r.Context(), user.ID, user.Role, page, pageSize)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -256,23 +294,23 @@ func (h *Handler) ListPendingReview(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListAdmin(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
 		return
 	}
 
 	page, pageSize, ok := httprequest.Pagination(r)
 	if !ok {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "分页参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 
 	result, err := h.service.ListAdmin(r.Context(), r.URL.Query().Get("status"), user.ID, user.Role, page, pageSize)
 	if errors.Is(err, ErrInvalidInput) {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "状态参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -290,19 +328,19 @@ func (h *Handler) RestoreArchived(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpdateAdmin(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
 		return
 	}
 
 	id, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 
 	var req adminUpdateArticleRequest
 	if err := httprequest.DecodeJSON(r, &req); err != nil {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 
@@ -314,15 +352,15 @@ func (h *Handler) UpdateAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, ErrInvalidInput) {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 	if errors.Is(err, ErrNotFound) {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -332,7 +370,7 @@ func (h *Handler) UpdateAdmin(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) changeVisibility(w http.ResponseWriter, r *http.Request, archive bool) {
 	id, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 
@@ -347,15 +385,15 @@ func (h *Handler) changeVisibility(w http.ResponseWriter, r *http.Request, archi
 	}
 
 	if errors.Is(err, ErrConflict) {
-		response.Error(w, http.StatusConflict, "CONFLICT", "当前文章状态不允许归档或恢复", nil)
+		response.Error(w, http.StatusConflict, "CONFLICT", "article state conflict", nil)
 		return
 	}
 	if errors.Is(err, ErrNotFound) {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 
@@ -373,19 +411,19 @@ func (h *Handler) Reject(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) review(w http.ResponseWriter, r *http.Request, approve bool) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "please login first", nil)
 		return
 	}
 
 	id, idOK := httprequest.IDParam(r, "id")
 	if !idOK {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 
 	var req reviewArticleRequest
 	if err := httprequest.DecodeJSON(r, &req); err != nil {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 
@@ -404,19 +442,19 @@ func (h *Handler) review(w http.ResponseWriter, r *http.Request, approve bool) {
 		return
 	}
 	if errors.Is(err, ErrInvalidInput) {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "拒绝原因不能为空", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request", nil)
 		return
 	}
 	if errors.Is(err, ErrConflict) {
-		response.Error(w, http.StatusConflict, "CONFLICT", "当前文章状态不允许归档或恢复", nil)
+		response.Error(w, http.StatusConflict, "CONFLICT", "article state conflict", nil)
 		return
 	}
 	if errors.Is(err, ErrNotFound) {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "article not found", nil)
 		return
 	}
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "service unavailable", nil)
 		return
 	}
 

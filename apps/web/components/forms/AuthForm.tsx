@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, type ReactNode, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import { login, register } from "@/lib/api/auth";
 
@@ -24,6 +24,7 @@ export function AuthForm({ mode, variant = "default" }: AuthFormProps) {
 
   const isLogin = mode === "login";
   const isTech = variant === "tech";
+  const passwordHint = useMemo(() => passwordQualityHint(password), [password]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -154,8 +155,8 @@ export function AuthForm({ mode, variant = "default" }: AuthFormProps) {
               </button>
             </span>
             {!isLogin && (
-              <span className="mt-2 block text-xs font-medium text-slate-400">
-                至少 8 位，建议包含字母、数字或符号中的两种
+              <span className={`mt-2 block text-xs font-medium ${passwordHint.className}`}>
+                {passwordHint.text}
               </span>
             )}
           </label>
@@ -243,31 +244,6 @@ export function AuthForm({ mode, variant = "default" }: AuthFormProps) {
             </span>
             <span className="pointer-events-none absolute inset-x-2 bottom-2 top-2 rounded border border-white/55 opacity-70" />
           </button>
-
-          {isLogin && (
-            <>
-              <div className="my-8 flex items-center gap-5 text-sm font-medium text-slate-500">
-                <span className="h-px flex-1 bg-slate-200" />
-                <span>或使用以下方式登录</span>
-                <span className="h-px flex-1 bg-slate-200" />
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <SocialButton label="GitHub">
-                  <GithubIcon />
-                </SocialButton>
-                <SocialButton label="Google">
-                  <span className="text-xl font-black text-[#4285f4]">G</span>
-                </SocialButton>
-                <SocialButton label="微信">
-                  <WechatIcon />
-                </SocialButton>
-                <SocialButton label="用户名">
-                  <UserIcon />
-                </SocialButton>
-              </div>
-            </>
-          )}
 
           <div className="mt-8 flex items-center gap-5 text-sm font-medium text-slate-500">
             <span className="h-px flex-1 bg-slate-200" />
@@ -386,25 +362,6 @@ function TechCorner({ className }: { className: string }) {
   );
 }
 
-function SocialButton({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className="grid h-14 place-items-center rounded-lg border border-slate-200 bg-white text-[#171b22] transition hover:border-[#f2c200] hover:bg-[#fff9d9]"
-      aria-label={`${label}登录暂未开放`}
-      title={`${label}登录暂未开放`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function MailIcon() {
   return (
     <svg className="size-5 text-slate-400" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -437,22 +394,6 @@ function EyeIcon() {
   );
 }
 
-function GithubIcon() {
-  return (
-    <svg className="size-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.2-3.37-1.2-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 5.99c.85 0 1.7.11 2.5.33 1.9-1.29 2.74-1.02 2.74-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.56 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
-    </svg>
-  );
-}
-
-function WechatIcon() {
-  return (
-    <svg className="size-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M9.5 5C5.9 5 3 7.4 3 10.3c0 1.7 1 3.1 2.5 4.1L5 16.7l2.5-1.3c.6.1 1.3.2 2 .2h.5a5 5 0 0 1-.2-1.4c0-3 3-5.4 6.6-5.4h.3C15.8 6.6 13 5 9.5 5Zm-2.2 4.2a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6Zm4.4 0a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6Zm4.8.8c-2.9 0-5.3 1.9-5.3 4.2s2.4 4.2 5.3 4.2c.5 0 1 0 1.5-.2l2 1-.4-1.8c1.1-.8 1.8-1.9 1.8-3.2 0-2.3-2.4-4.2-5.3-4.2Zm-1.8 3.5a.7.7 0 1 1 0-1.4.7.7 0 0 1 0 1.4Zm3.6 0a.7.7 0 1 1 0-1.4.7.7 0 0 1 0 1.4Z" />
-    </svg>
-  );
-}
-
 function UserIcon() {
   return (
     <svg className="size-6" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -460,4 +401,25 @@ function UserIcon() {
       <path d="M5 20a7 7 0 0 1 14 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
+}
+
+function passwordQualityHint(password: string) {
+  if (password.length === 0) {
+    return { text: "密码长度至少 8 位。可使用更复杂组合，但不会强制限制。", className: "text-slate-400" };
+  }
+  if (password.length < 8) {
+    return { text: "还差一点：密码长度至少 8 位。", className: "text-red-500" };
+  }
+  const kinds = [
+    /[a-zA-Z]/.test(password),
+    /\d/.test(password),
+    /[^a-zA-Z\d]/.test(password),
+  ].filter(Boolean).length;
+  if (password.length >= 12 && kinds >= 2) {
+    return { text: "强度提示：不错，长度和组合都比较稳。", className: "text-green-600" };
+  }
+  if (kinds >= 2) {
+    return { text: "强度提示：可用。更长的密码会更稳。", className: "text-amber-600" };
+  }
+  return { text: "强度提示：可注册，但建议混合字母、数字或符号。", className: "text-amber-600" };
 }

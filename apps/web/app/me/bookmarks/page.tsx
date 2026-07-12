@@ -59,7 +59,7 @@ export default function MyBookmarksPage() {
       listBookmarks(nextCollectionId),
       listBookmarkCollections(),
       listMyComments().catch(() => []),
-      listFollowing().catch(() => []),
+      listFollowing().then((page) => page.users).catch(() => []),
       listFollowers().catch(() => []),
     ]);
     setData({ user, profile, articles, bookmarks, collections, comments, following, followers });

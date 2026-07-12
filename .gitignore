@@ -30,3 +30,4 @@ services/api/uploads/*
 Thumbs.db
 .vscode/
 .idea/
+.cache

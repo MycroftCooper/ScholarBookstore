@@ -90,6 +90,20 @@ export function createArticle(input: {
   });
 }
 
+export function previewArticle(input: {
+  moduleId: number;
+  title: string;
+  summary: string;
+  contentMd: string;
+  sourceType?: ArticleSummary["sourceType"];
+  tags?: string[];
+}) {
+  return apiRequest<ArticleSummary>("/articles/preview", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function listMyArticles(status?: ArticleSummary["status"]) {
   const params = new URLSearchParams();
   if (status) {

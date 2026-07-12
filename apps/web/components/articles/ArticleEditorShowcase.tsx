@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ArticlePreviewShowcase } from "@/components/articles/ArticleDetailShowcase";
 import { MarkdownContent } from "@/components/markdown/MarkdownContent";
-import { type ArticleSummary } from "@/lib/api/articles";
+import { previewArticle, type ArticleSummary } from "@/lib/api/articles";
+import { ApiError } from "@/lib/api/client";
 import { type ModuleSummary } from "@/lib/api/modules";
 import { uploadArticleImage } from "@/lib/api/uploads";
 
@@ -28,6 +30,8 @@ type ArticleEditorShowcaseProps = {
   error?: string;
   success?: string;
   articleId?: number;
+  previewAuthorId?: number;
+  previewAuthorUsername?: string;
   reviewNote?: string;
   editable?: boolean;
   onChange: (values: ArticleEditorValues) => void;
@@ -59,6 +63,8 @@ export function ArticleEditorShowcase({
   error = "",
   success = "",
   articleId,
+  previewAuthorId = 0,
+  previewAuthorUsername = "预览作者",
   reviewNote,
   editable = true,
   onChange,
@@ -68,9 +74,11 @@ export function ArticleEditorShowcase({
 }: ArticleEditorShowcaseProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const coverInputRef = useRef<HTMLInputElement | null>(null);
   const [tagDraft, setTagDraft] = useState("");
   const [preview, setPreview] = useState(false);
+  const [articlePreview, setArticlePreview] = useState<ArticleSummary | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
   const [uploadError, setUploadError] = useState("");
 
   const selectedModule = modules.find((item) => String(item.id) === values.moduleId);
@@ -149,6 +157,47 @@ export function ArticleEditorShowcase({
     }
   }
 
+  async function handleArticlePreview() {
+    setPreviewError("");
+    if (!values.moduleId) {
+      setPreviewError("请选择投稿版块");
+      return;
+    }
+    if (!values.title.trim()) {
+      setPreviewError("请填写文章标题后再预览");
+      return;
+    }
+    setPreviewLoading(true);
+    try {
+      const article = await previewArticle({
+        moduleId: Number(values.moduleId),
+        title: values.title,
+        summary: values.summary,
+        contentMd: values.contentMd,
+        sourceType: values.sourceType,
+        tags: values.tags,
+      });
+      setArticlePreview(article);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setPreviewError("请先登录后再预览文章页");
+        return;
+      }
+      if (selectedModule) {
+        setArticlePreview(buildLocalPreviewArticle(values, selectedModule, previewAuthorId, previewAuthorUsername));
+        setPreviewError("");
+        return;
+      }
+      setPreviewError(err instanceof ApiError ? `文章预览生成失败：${err.message}` : "文章预览生成失败，请稍后重试");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  if (articlePreview) {
+    return <ArticlePreviewShowcase article={articlePreview} onClose={() => setArticlePreview(null)} />;
+  }
+
   return (
     <div className="relative mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
       <div className="mb-5 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
@@ -186,7 +235,7 @@ export function ArticleEditorShowcase({
               </div>
             </section>
 
-            <section className="grid gap-4 md:grid-cols-4">
+            <section className="grid gap-4 md:grid-cols-3">
               <Field label="所属领域">
                 <select
                   value={selectedModule?.domainId ?? ""}
@@ -240,17 +289,6 @@ export function ArticleEditorShowcase({
                   </button>
                 </div>
               </Field>
-              <Field label="封面图">
-                <button
-                  type="button"
-                  disabled={!canEdit}
-                  onClick={() => coverInputRef.current?.click()}
-                  className="h-11 w-full rounded-md border border-dashed border-[var(--color-line)] bg-[var(--color-surface-solid)] text-sm font-semibold text-[var(--color-muted)] hover:border-[var(--color-accent-strong)] hover:text-[var(--color-ink)] disabled:opacity-50"
-                >
-                  上传封面
-                </button>
-                <input ref={coverInputRef} type="file" accept="image/*" className="hidden" />
-              </Field>
             </section>
 
             <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-soft)]">
@@ -297,7 +335,7 @@ export function ArticleEditorShowcase({
                   onClick={() => setPreview((value) => !value)}
                   className="ml-auto h-9 rounded-md px-3 text-sm font-semibold text-[var(--color-muted)] hover:bg-[var(--color-surface-solid)] hover:text-[var(--color-ink)]"
                 >
-                  {preview ? "编辑" : "预览"}
+                  {preview ? "关闭双栏" : "双栏预览"}
                 </button>
                 <input
                   ref={imageInputRef}
@@ -309,8 +347,18 @@ export function ArticleEditorShowcase({
               </div>
 
               {preview ? (
-                <div className="min-h-[560px] bg-[var(--color-surface-solid)] px-6 py-5">
-                  <MarkdownContent content={values.contentMd || "暂无正文内容。"} />
+                <div className="grid min-h-[620px] bg-[var(--color-surface-solid)] lg:grid-cols-2">
+                  <textarea
+                    ref={textareaRef}
+                    value={values.contentMd}
+                    onChange={(event) => update({ contentMd: event.target.value })}
+                    disabled={!canEdit}
+                    placeholder="# 从这里开始写作..."
+                    className="min-h-[620px] w-full resize-y border-b border-[var(--color-line)] bg-transparent px-6 py-5 font-mono text-sm leading-7 text-[var(--color-ink)] outline-none placeholder:text-[var(--color-muted)] disabled:opacity-70 lg:border-b-0 lg:border-r"
+                  />
+                  <div className="min-h-[620px] overflow-y-auto px-6 py-5">
+                    <MarkdownContent content={values.contentMd || "暂无正文内容。"} />
+                  </div>
                 </div>
               ) : (
                 <textarea
@@ -331,10 +379,11 @@ export function ArticleEditorShowcase({
               </div>
             </section>
 
-            {(error || success || reviewNote || uploadError) && (
+            {(error || success || reviewNote || uploadError || previewError) && (
               <section className="grid gap-3 text-sm">
                 {reviewNote && <Notice tone="warn">审核说明：{reviewNote}</Notice>}
                 {uploadError && <Notice tone="error">{uploadError}</Notice>}
+                {previewError && <Notice tone="error">{previewError}</Notice>}
                 {error && <Notice tone="error">{error}</Notice>}
                 {success && <Notice tone="success">{success}</Notice>}
               </section>
@@ -351,10 +400,11 @@ export function ArticleEditorShowcase({
               </button>
               <button
                 type="button"
-                onClick={() => setPreview((value) => !value)}
+                disabled={previewLoading}
+                onClick={handleArticlePreview}
                 className="h-14 rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] text-sm font-semibold text-[var(--color-ink)] hover:border-[var(--color-accent-strong)]"
               >
-                {preview ? "返回编辑" : "预览"}
+                {previewLoading ? "生成预览中..." : "文章页预览"}
               </button>
               <button
                 type="button"
@@ -427,7 +477,7 @@ export function ArticleEditorShowcase({
               <Timeline
                 items={[
                   ["使用 Markdown 语法", "支持常见 Markdown 语法，便于排版与结构化展示。"],
-                  ["设置高质量封面图", "建议使用清晰、有吸引力的封面图，尺寸建议 1280×720。"],
+                  ["善用正文配图", "必要时在正文中插入图片，帮助解释结构、流程或关键结果。"],
                   ["完善内容结构", "建议包含明确标题层级、代码示例与总结，提升可读性。"],
                 ]}
               />
@@ -535,4 +585,41 @@ function countWords(content: string) {
     }
   }
   return count;
+}
+
+function buildLocalPreviewArticle(
+  values: ArticleEditorValues,
+  module: ModuleSummary,
+  authorId: number,
+  authorUsername: string,
+): ArticleSummary {
+  const wordCount = countWords(values.contentMd);
+  const now = new Date().toISOString();
+  return {
+    id: 0,
+    moduleId: module.id,
+    moduleSlug: module.slug,
+    moduleName: module.name,
+    authorId,
+    authorUsername,
+    title: values.title.trim(),
+    summary: values.summary.trim(),
+    contentMd: values.contentMd.trim(),
+    sourceType: values.sourceType,
+    status: "draft",
+    publishedAt: null,
+    wordCount,
+    readingMinutes: Math.max(1, Math.ceil(wordCount / 500)),
+    viewCount: 0,
+    revisionCount: 0,
+    isFeatured: false,
+    tags: values.tags.map((tag) => ({
+      id: 0,
+      name: tag,
+      slug: tag.trim().toLowerCase().replace(/[^\p{L}\p{N}-]+/gu, "-").replace(/^-|-$/g, ""),
+      usageCount: 0,
+    })),
+    createdAt: now,
+    updatedAt: now,
+  };
 }

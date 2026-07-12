@@ -67,6 +67,17 @@ type CreateArticleInput struct {
 	Tags           []string
 }
 
+type PreviewArticleInput struct {
+	ModuleID       int64
+	AuthorID       int64
+	AuthorUsername string
+	Title          string
+	Summary        string
+	ContentMD      string
+	SourceType     string
+	Tags           []string
+}
+
 type UpdateArticleInput struct {
 	Title          *string
 	Summary        *string
@@ -106,6 +117,12 @@ type PublishedArticleFilter struct {
 	TagSlug    string
 	Sort       string
 	Featured   bool
+}
+
+type PreviewModule struct {
+	ID   int64
+	Slug string
+	Name string
 }
 
 type Page struct {

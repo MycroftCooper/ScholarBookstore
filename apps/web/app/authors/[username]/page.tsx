@@ -2,35 +2,37 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SiteFrame } from "@/components/layout/SiteFrame";
 import { UserAvatar } from "@/components/users/UserAvatar";
 import { ApiError } from "@/lib/api/client";
+import { createUserReport } from "@/lib/api/reports";
 import {
   followUser,
   getFollowState,
   getPublicAuthorProfile,
   unfollowUser,
+  type AuthorArticle,
   type FollowState,
   type PublicAuthorProfile,
 } from "@/lib/api/users";
 
-type SortMode = "latest" | "hot" | "featured";
-
-const authorTags = ["后端开发", "Go", "云原生", "系统设计", "技术写作"];
+type SortMode = "latest" | "hot" | "bookmarks";
 
 export default function AuthorProfilePage() {
   const params = useParams<{ username: string }>();
+  const username = params?.username ? decodeURIComponent(params.username) : "";
   const [profile, setProfile] = useState<PublicAuthorProfile | null>(null);
   const [followState, setFollowState] = useState<FollowState | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortMode>("latest");
+  const [busy, setBusy] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [acting, setActing] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const username = params?.username ? decodeURIComponent(params.username) : "";
     if (!username) {
       setError("用户不存在");
       setLoading(false);
@@ -51,65 +53,40 @@ export default function AuthorProfilePage() {
           });
       })
       .catch((err) => {
-        if (err instanceof ApiError && err.status === 404) {
-          setError("用户不存在");
-          return;
-        }
-        setError("作者主页加载失败，请稍后重试");
+        setError(err instanceof ApiError ? err.message : "作者主页加载失败");
       })
       .finally(() => setLoading(false));
-  }, [params?.username]);
+  }, [username]);
 
-  const visibleArticles = useMemo(() => {
+  const articles = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    const articles = [...(profile?.articles ?? [])].filter((article) => {
-      if (!keyword) {
-        return true;
-      }
-      return `${article.title} ${article.summary} ${article.moduleName}`
-        .toLowerCase()
-        .includes(keyword);
-    });
-
+    const items = [...(profile?.articles ?? [])].filter((article) =>
+      `${article.title} ${article.summary} ${article.moduleName}`.toLowerCase().includes(keyword),
+    );
     if (sort === "hot") {
-      return articles.sort((a, b) => b.viewCount - a.viewCount);
+      return items.sort((a, b) => b.viewCount - a.viewCount);
     }
-    if (sort === "featured") {
-      return articles.sort((a, b) => b.bookmarkCount - a.bookmarkCount);
+    if (sort === "bookmarks") {
+      return items.sort((a, b) => b.bookmarkCount - a.bookmarkCount);
     }
-    return articles.sort(
+    return items.sort(
       (a, b) =>
         new Date(b.publishedAt ?? b.updatedAt).getTime() -
         new Date(a.publishedAt ?? a.updatedAt).getTime(),
     );
   }, [profile?.articles, query, sort]);
 
-  const moduleStats = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const article of profile?.articles ?? []) {
-      counts.set(article.moduleName, (counts.get(article.moduleName) ?? 0) + 1);
-    }
-    const total = profile?.articles.length || 1;
-    return [...counts.entries()]
-      .map(([name, count]) => ({
-        name,
-        count,
-        percent: Math.round((count / total) * 100),
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  }, [profile?.articles]);
-
-  async function handleFollowToggle() {
-    if (!profile || acting) {
+  async function toggleFollow() {
+    if (!profile || busy) {
       return;
     }
-    setActing(true);
-    setError("");
+    if (!followState) {
+      window.location.href = "/login";
+      return;
+    }
+    setBusy(true);
     try {
-      const next = followState?.following
-        ? await unfollowUser(profile.username)
-        : await followUser(profile.username);
+      const next = followState.following ? await unfollowUser(profile.username) : await followUser(profile.username);
       setFollowState(next);
       setProfile((current) =>
         current
@@ -125,9 +102,32 @@ export default function AuthorProfilePage() {
         window.location.href = "/login";
         return;
       }
-      setError("关注操作失败，请稍后重试");
+      setError(err instanceof ApiError ? err.message : "关注操作失败");
     } finally {
-      setActing(false);
+      setBusy(false);
+    }
+  }
+
+  async function reportUser() {
+    if (!profile || reporting || reportSent) {
+      return;
+    }
+    if (!followState) {
+      window.location.href = "/login";
+      return;
+    }
+    setReporting(true);
+    try {
+      await createUserReport(profile.username, "用户主页存在违规内容");
+      setReportSent(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : "举报失败");
+    } finally {
+      setReporting(false);
     }
   }
 
@@ -138,35 +138,57 @@ export default function AuthorProfilePage() {
         {error && <StateCard tone="error">{error}</StateCard>}
 
         {profile && (
-          <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)_300px]">
+          <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
             <aside className="space-y-5">
               <AuthorCard
                 profile={profile}
                 followState={followState}
-                acting={acting}
-                onFollowToggle={handleFollowToggle}
+                busy={busy}
+                reporting={reporting}
+                reportSent={reportSent}
+                onFollow={toggleFollow}
+                onReport={reportUser}
               />
-              <SocialLinks />
-              <ContributionHistory articles={profile.articles} />
             </aside>
 
             <main className="min-w-0 space-y-5">
-              <HeroCard profile={profile} />
-              <ArticleTabs />
-              <ArticleTools
-                query={query}
-                sort={sort}
-                onQuery={setQuery}
-                onSort={setSort}
-              />
-              <ArticleList articles={visibleArticles} />
-            </main>
+              <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-soft)]">
+                <h1 className="text-3xl font-semibold text-[var(--color-ink)]">{profile.username}</h1>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-muted)]">
+                  {profile.bio || "浏览作者公开发布的文章和技术领域分布。"}
+                </p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-4">
+                  <Stat label="文章" value={profile.publishedArticleCount} />
+                  <Stat label="收藏" value={profile.bookmarkCount} />
+                  <Stat label="粉丝" value={profile.followersCount} />
+                  <Stat label="关注" value={profile.followingCount} />
+                </div>
+              </section>
 
-            <aside className="space-y-5">
-              <PopularArticles articles={profile.articles} />
-              <ActiveModules modules={moduleStats} />
-              <RecommendedUsers />
-            </aside>
+              <InterestPanel profile={profile} />
+
+              <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-soft)]">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="搜索该作者文章"
+                    className="h-11 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 text-sm outline-none focus:border-[var(--color-accent-strong)]"
+                  />
+                  <select
+                    value={sort}
+                    onChange={(event) => setSort(event.target.value as SortMode)}
+                    className="h-11 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 text-sm outline-none focus:border-[var(--color-accent-strong)]"
+                  >
+                    <option value="latest">最新发布</option>
+                    <option value="hot">阅读最多</option>
+                    <option value="bookmarks">收藏最多</option>
+                  </select>
+                </div>
+              </section>
+
+              <ArticleList articles={articles} />
+            </main>
           </div>
         )}
       </section>
@@ -177,331 +199,152 @@ export default function AuthorProfilePage() {
 function AuthorCard({
   profile,
   followState,
-  acting,
-  onFollowToggle,
+  busy,
+  reporting,
+  reportSent,
+  onFollow,
+  onReport,
 }: {
   profile: PublicAuthorProfile;
   followState: FollowState | null;
-  acting: boolean;
-  onFollowToggle: () => void;
+  busy: boolean;
+  reporting: boolean;
+  reportSent: boolean;
+  onFollow: () => void;
+  onReport: () => void;
 }) {
   return (
     <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-6 text-center shadow-[var(--shadow-soft)]">
-      <div className="mx-auto w-fit rounded-full border border-[var(--color-line)] bg-[var(--color-surface-solid)] p-2">
-        <UserAvatar username={profile.username} avatarUrl={profile.avatarUrl} size="lg" />
-      </div>
-      <h1 className="mt-4 text-2xl font-semibold text-[var(--color-ink)]">
-        {profile.username}
-      </h1>
-      <p className="mt-1 text-sm text-[var(--color-muted)]">@{profile.username}</p>
-      <p className="mt-3 text-sm leading-6 text-[var(--color-muted)]">
+      <UserAvatar username={profile.username} avatarUrl={profile.avatarUrl} size="lg" />
+      <h2 className="mt-4 text-2xl font-semibold text-[var(--color-ink)]">{profile.username}</h2>
+      <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
         {profile.bio || "这位作者还没有填写个人简介。"}
       </p>
-
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        {authorTags.slice(0, 4).map((tag) => (
-          <Badge key={tag}>{tag}</Badge>
-        ))}
-      </div>
-
-      <div className="mt-5">
+      <div className="mt-5 grid gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onFollow}
+          className="h-11 rounded-md bg-[var(--color-accent)] px-4 text-sm font-semibold text-[#171717] disabled:opacity-60"
+        >
+          {busy ? "处理中..." : followState?.following ? "已关注" : "关注"}
+        </button>
         {followState ? (
           <button
             type="button"
-            disabled={acting}
-            onClick={onFollowToggle}
-            className={`h-11 w-full rounded-md px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-              followState.following
-                ? "border border-[var(--color-line)] bg-[var(--color-surface-solid)] text-[var(--color-muted)] hover:text-[var(--color-ink)]"
-                : "bg-[var(--color-accent)] text-black hover:brightness-95"
-            }`}
+            disabled={reporting || reportSent}
+            onClick={onReport}
+            className="h-10 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 text-sm font-semibold text-[var(--color-muted)] disabled:opacity-60"
           >
-            {acting ? "处理中..." : followState.following ? "已关注" : "+ 关注"}
+            {reportSent ? "已提交举报" : reporting ? "提交中..." : "举报用户"}
           </button>
         ) : (
           <Link
             href="/login"
-            className="inline-flex h-11 w-full items-center justify-center rounded-md bg-[var(--color-accent)] px-4 text-sm font-semibold text-black hover:brightness-95"
+            className="grid h-10 place-items-center rounded-md border border-[var(--color-line)] text-sm font-semibold text-[var(--color-muted)]"
           >
-            登录后关注
+            登录后可举报
           </Link>
         )}
       </div>
-
-      <div className="mt-5 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] p-4 text-left">
-        <h2 className="text-sm font-semibold text-[var(--color-ink)]">资料信息</h2>
-        <div className="mt-3 space-y-3 text-sm text-[var(--color-muted)]">
-          <InfoLine label="所在地" value={profile.school || "未填写"} />
-          <InfoLine label="组织" value={profile.company || "未填写"} />
-        </div>
-      </div>
-
-      <div className="mt-6 grid grid-cols-4 gap-2 border-t border-[var(--color-line)] pt-5 text-center">
-        <MiniStat label="文章" value={String(profile.publishedArticleCount)} />
-        <MiniStat label="收藏" value={formatCompact(profile.bookmarkCount)} />
-        <MiniStat label="粉丝" value={formatCompact(profile.followersCount)} />
-        <MiniStat label="关注" value={formatCompact(profile.followingCount)} />
+      <div className="mt-5 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] p-4 text-left text-sm text-[var(--color-muted)]">
+        <div>学校：{profile.school || "未填写"}</div>
+        <div className="mt-2">组织：{profile.company || "未填写"}</div>
       </div>
     </section>
   );
 }
 
-function SocialLinks() {
+function InterestPanel({ profile }: { profile: PublicAuthorProfile }) {
+  const modules = profile.followingModules ?? [];
+  const domains = profile.followingDomains ?? [];
   return (
-    <Panel title="社交与链接">
-      <EmptyLine text="暂无公开社交链接" />
-    </Panel>
-  );
-}
-
-function ContributionHistory({
-  articles,
-}: {
-  articles: PublicAuthorProfile["articles"];
-}) {
-  const activeDays = new Set(
-    articles
-      .map((article) => (article.publishedAt ?? article.createdAt).slice(0, 10))
-      .filter(Boolean),
-  );
-  const days = Array.from({ length: 84 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (83 - index));
-    const key = date.toISOString().slice(0, 10);
-    return {
-      key,
-      active: activeDays.has(key),
-    };
-  });
-
-  return (
-    <Panel title="贡献历程">
-      <div className="grid grid-cols-12 gap-1">
-        {days.map((day) => (
-          <span
-            key={day.key}
-            title={day.key}
-            className={`h-3 rounded-sm ${
-              day.active ? "bg-[var(--color-accent)]" : "bg-[var(--color-surface-solid)]"
-            }`}
-          />
-        ))}
-      </div>
-      <div className="mt-3 flex items-center justify-between text-xs text-[var(--color-muted)]">
-        <span>少</span>
-        <span>{articles.length} 篇公开文章</span>
-        <span>多</span>
-      </div>
-    </Panel>
-  );
-}
-
-function HeroCard({ profile }: { profile: PublicAuthorProfile }) {
-  return (
-    <section className="relative overflow-hidden rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-8 shadow-[var(--shadow-soft)]">
-      <ContourLayer />
-      <div className="relative max-w-2xl">
-        <h2 className="text-3xl font-semibold text-[var(--color-ink)]">
-          {profile.bio ? profile.bio.slice(0, 28) : `来自 ${profile.username} 的技术主页`}
-        </h2>
-        <p className="mt-4 text-sm leading-7 text-[var(--color-muted)]">
-          {profile.bio || "浏览作者公开发布的文章、关注数据与技术领域分布。"}
-        </p>
-        <div className="mt-5 flex flex-wrap gap-4 text-sm text-[var(--color-muted)]">
-          <span>{profile.school || "地区未填写"}</span>
-          <span>{formatJoinDate(profile.articles)}</span>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ArticleTabs() {
-  return (
-    <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[var(--shadow-soft)]">
-      <div className="flex gap-8 border-b border-[var(--color-line)] px-5">
-        {["文章", "收藏", "简历"].map((item, index) => (
-          <button
-            key={item}
-            type="button"
-            disabled={index !== 0}
-            className={`border-b-2 py-4 text-sm font-semibold ${
-              index === 0
-                ? "border-[var(--color-accent)] text-[var(--color-ink)]"
-                : "border-transparent text-[var(--color-muted)] opacity-60"
-            }`}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ArticleTools({
-  query,
-  sort,
-  onQuery,
-  onSort,
-}: {
-  query: string;
-  sort: SortMode;
-  onQuery: (value: string) => void;
-  onSort: (value: SortMode) => void;
-}) {
-  return (
-    <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-soft)]">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {[
-            ["latest", "最新"],
-            ["hot", "热门"],
-            ["featured", "精选"],
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => onSort(value as SortMode)}
-              className={`h-10 rounded-md border px-4 text-sm font-semibold transition ${
-                sort === value
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-black"
-                  : "border-[var(--color-line)] bg-[var(--color-surface-solid)] text-[var(--color-muted)] hover:text-[var(--color-ink)]"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <input
-          value={query}
-          onChange={(event) => onQuery(event.target.value)}
-          placeholder="搜索该作者文章..."
-          className="h-11 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 text-sm text-[var(--color-ink)] outline-none transition focus:border-[var(--color-accent)] xl:max-w-sm"
-        />
-      </div>
-    </section>
-  );
-}
-
-function ArticleList({ articles }: { articles: PublicAuthorProfile["articles"] }) {
-  return (
-    <section className="overflow-hidden rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[var(--shadow-soft)]">
-      <div className="divide-y divide-[var(--color-line)]">
-        {articles.map((article, index) => (
+    <section className="grid gap-5 lg:grid-cols-2">
+      <FollowPanel title="关注的领域" emptyText="暂未关注领域">
+        {domains.map((domain) => (
           <Link
-            key={article.id}
-            href={`/articles/${article.id}`}
-            className="grid gap-4 px-5 py-5 transition hover:bg-[var(--color-surface-solid)] md:grid-cols-[minmax(0,1fr)_180px]"
+            key={domain.id}
+            href={`/domain/${domain.id}`}
+            className="block rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-4 hover:border-[var(--color-accent-strong)]"
           >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                {index === 0 && <StatusPill>新帖</StatusPill>}
-                <h3 className="text-xl font-semibold leading-7 text-[var(--color-ink)]">
-                  {article.title}
-                </h3>
-              </div>
-              <p className="mt-2 line-clamp-2 text-sm leading-7 text-[var(--color-muted)]">
-                {article.summary || "这篇文章暂时没有摘要。"}
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-[var(--color-muted)]">
-                <Badge>{article.moduleName}</Badge>
-                <span>{formatDate(article.publishedAt ?? article.updatedAt)}</span>
-              </div>
-            </div>
-            <div className="relative hidden overflow-hidden rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] md:block">
-              <ContourLayer />
-              <div className="relative grid h-full min-h-28 place-items-center px-4 text-center text-sm font-semibold text-[var(--color-muted)]">
-                {article.moduleName}
-              </div>
-            </div>
-          </Link>
-        ))}
-
-        {articles.length === 0 && (
-          <div className="px-5 py-12 text-center text-sm text-[var(--color-muted)]">
-            暂无符合条件的文章。
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function PopularArticles({ articles }: { articles: PublicAuthorProfile["articles"] }) {
-  const items = [...articles].sort((a, b) => b.viewCount - a.viewCount).slice(0, 5);
-  return (
-    <Panel title="热门文章">
-      <div className="space-y-3">
-        {items.map((article, index) => (
-          <Link
-            key={article.id}
-            href={`/articles/${article.id}`}
-            className="grid grid-cols-[24px_minmax(0,1fr)_auto] gap-3 text-sm"
-          >
-            <span className="font-semibold text-[var(--color-accent)]">{index + 1}</span>
-            <span className="line-clamp-2 font-semibold leading-6 text-[var(--color-ink)]">
-              {article.title}
-            </span>
-            <span className="text-xs text-[var(--color-muted)]">
-              {formatCompact(article.viewCount)}
+            <span className="block truncate font-semibold text-[var(--color-ink)]">{domain.name}</span>
+            <span className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--color-muted)]">
+              {domain.description || domain.slug}
             </span>
           </Link>
         ))}
-        {items.length === 0 && <EmptyLine text="暂无文章" />}
-      </div>
-    </Panel>
-  );
-}
-
-function ActiveModules({
-  modules,
-}: {
-  modules: Array<{ name: string; count: number; percent: number }>;
-}) {
-  return (
-    <Panel title="活跃领域">
-      <div className="space-y-4">
-        {modules.map((item) => (
-          <div key={item.name}>
-            <div className="mb-1 flex justify-between text-sm text-[var(--color-muted)]">
-              <span>{item.name}</span>
-              <span>{item.percent}%</span>
-            </div>
-            <div className="h-1.5 rounded-full bg-[var(--color-surface-solid)]">
-              <div
-                className="h-full rounded-full bg-[var(--color-accent)]"
-                style={{ width: `${item.percent}%` }}
-              />
-            </div>
-          </div>
+      </FollowPanel>
+      <FollowPanel title="关注的版块" emptyText="暂未关注版块">
+        {modules.map((module) => (
+          <Link
+            key={module.id}
+            href={`/modules/${module.slug}`}
+            className="block rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-4 hover:border-[var(--color-accent-strong)]"
+          >
+            <span className="block truncate font-semibold text-[var(--color-ink)]">{module.name}</span>
+            <span className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--color-muted)]">
+              {module.domainName} / {module.description || module.slug}
+            </span>
+          </Link>
         ))}
-        {modules.length === 0 && <EmptyLine text="暂无领域分布" />}
-      </div>
-    </Panel>
+      </FollowPanel>
+    </section>
   );
 }
 
-function RecommendedUsers() {
-  return (
-    <Panel title="推荐其他用户">
-      <EmptyLine text="推荐用户接口暂未接入" />
-    </Panel>
-  );
-}
-
-function Panel({
+function FollowPanel({
   title,
+  emptyText,
   children,
 }: {
   title: string;
-  children: ReactNode;
+  emptyText: string;
+  children: React.ReactNode;
 }) {
+  const items = Array.isArray(children) ? children : [children];
+  const hasItems = items.some(Boolean);
   return (
-    <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-soft)]">
-      <h3 className="text-lg font-semibold text-[var(--color-ink)]">{title}</h3>
-      <div className="mt-4">{children}</div>
+    <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] p-5 shadow-[var(--shadow-soft)]">
+      <h2 className="mb-4 text-lg font-semibold text-[var(--color-ink)]">{title}</h2>
+      <div className="grid gap-3">
+        {hasItems ? children : <EmptyLine text={emptyText} />}
+      </div>
     </section>
+  );
+}
+
+function ArticleList({ articles }: { articles: AuthorArticle[] }) {
+  return (
+    <section className="overflow-hidden rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[var(--shadow-soft)]">
+      {articles.map((article) => (
+        <Link
+          key={article.id}
+          href={`/articles/${article.id}`}
+          className="block border-b border-[var(--color-line)] p-5 last:border-b-0 hover:bg-[var(--color-surface-solid)]"
+        >
+          <h2 className="text-xl font-semibold text-[var(--color-ink)]">{article.title}</h2>
+          <p className="mt-2 line-clamp-2 text-sm leading-7 text-[var(--color-muted)]">
+            {article.summary || "这篇文章暂时没有摘要。"}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-4 text-xs text-[var(--color-muted)]">
+            <span>{article.moduleName}</span>
+            <span>{formatDate(article.publishedAt ?? article.updatedAt)}</span>
+            <span>{article.viewCount} 阅读</span>
+            <span>{article.bookmarkCount} 收藏</span>
+          </div>
+        </Link>
+      ))}
+      {articles.length === 0 && <EmptyLine text="暂无文章" />}
+    </section>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] p-4">
+      <div className="text-2xl font-semibold text-[var(--color-ink)]">{value}</div>
+      <div className="mt-1 text-sm text-[var(--color-muted)]">{label}</div>
+    </div>
   );
 }
 
@@ -509,15 +352,13 @@ function StateCard({
   children,
   tone = "default",
 }: {
-  children: ReactNode;
+  children: React.ReactNode;
   tone?: "default" | "error";
 }) {
   return (
     <div
-      className={`rounded-md border p-5 text-sm shadow-[var(--shadow-soft)] ${
-        tone === "error"
-          ? "border-red-200 bg-red-50 text-red-700"
-          : "border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-muted)]"
+      className={`rounded-md border p-5 text-sm ${
+        tone === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-muted)]"
       }`}
     >
       {children}
@@ -525,92 +366,17 @@ function StateCard({
   );
 }
 
-function InfoLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 text-sm">
-      <span className="text-[var(--color-muted)]">{label}</span>
-      <span className="text-right font-semibold text-[var(--color-ink)]">{value}</span>
-    </div>
-  );
-}
-
-function Badge({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded-md bg-[var(--color-surface-solid)] px-3 py-1 text-xs font-semibold text-[var(--color-muted)]">
-      {children}
-    </span>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-xs text-[var(--color-muted)]">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-[var(--color-ink)]">{value}</div>
-    </div>
-  );
-}
-
-function StatusPill({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded-md bg-[var(--color-accent)] px-2 py-1 text-xs font-semibold text-black">
-      {children}
-    </span>
-  );
-}
-
 function EmptyLine({ text }: { text: string }) {
-  return (
-    <div className="rounded-md border border-dashed border-[var(--color-line)] px-4 py-6 text-center text-sm text-[var(--color-muted)]">
-      {text}
-    </div>
-  );
-}
-
-function ContourLayer() {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 opacity-50"
-      style={{
-        backgroundImage:
-          "radial-gradient(circle at 80% 20%, rgba(245,197,24,0.18), transparent 12rem), repeating-radial-gradient(circle at 55% 35%, transparent 0 14px, rgba(148,163,184,0.14) 15px 16px)",
-      }}
-    />
-  );
-}
-
-function formatCompact(value: number) {
-  if (value >= 10000) {
-    return `${(value / 10000).toFixed(value >= 100000 ? 0 : 1)}w`;
-  }
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
-  }
-  return String(value);
+  return <div className="p-8 text-center text-sm text-[var(--color-muted)]">{text}</div>;
 }
 
 function formatDate(value: string | null) {
   if (!value) {
-    return "时间未知";
+    return "未知时间";
   }
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(value));
-}
-
-function formatJoinDate(articles: PublicAuthorProfile["articles"]) {
-  const earliest = articles
-    .map((item) => new Date(item.createdAt).getTime())
-    .filter((value) => !Number.isNaN(value))
-    .sort((a, b) => a - b)[0];
-  if (!earliest) {
-    return "暂无发布记录";
-  }
-  return `${new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-  }).format(new Date(earliest))} 开始发布`;
 }

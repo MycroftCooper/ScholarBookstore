@@ -1000,12 +1000,58 @@
 - 登录：是
 - 角色：user、reviewer、admin
 
+响应：当前用户关注的作者、版块和领域。
+
+```json
+{
+  "users": [],
+  "modules": [],
+  "domains": []
+}
+```
+
 ### 9.6 关注我的用户
 
 - Method：`GET`
 - Path：`/api/v1/me/followers`
 - 登录：是
 - 角色：user、reviewer、admin
+
+### 9.7 版块关注状态
+
+- Method：`GET`
+- Path：`/api/v1/modules/{slug}/follow`
+- 登录：是
+- 角色：user、reviewer、admin
+
+响应：当前用户是否关注目标版块，以及该版块关注数。
+
+### 9.8 关注/取关版块
+
+- Method：`POST` / `DELETE`
+- Path：`/api/v1/modules/{slug}/follow`
+- 登录：是
+- 角色：user、reviewer、admin
+
+约束：只能关注存在、启用且所属领域启用的版块；重复关注幂等。
+
+### 9.9 领域关注状态
+
+- Method：`GET`
+- Path：`/api/v1/domains/{id}/follow`
+- 登录：是
+- 角色：user、reviewer、admin
+
+响应：当前用户是否关注目标领域，以及该领域关注数。
+
+### 9.10 关注/取关领域
+
+- Method：`POST` / `DELETE`
+- Path：`/api/v1/domains/{id}/follow`
+- 登录：是
+- 角色：user、reviewer、admin
+
+约束：只能关注存在且启用的领域；重复关注幂等。
 
 ## 10. 举报接口
 
@@ -1026,7 +1072,24 @@
 
 约束：只能举报已发布文章；同一用户对同一文章只能有一个待处理举报。
 
-### 10.2 后台举报列表
+### 10.2 举报用户主页
+
+- Method：`POST`
+- Path：`/api/v1/users/{username}/reports`
+- 登录：是
+- 角色：user、reviewer、admin
+
+请求：
+
+```json
+{
+  "reason": "主页信息疑似违规"
+}
+```
+
+约束：不能举报自己；只能举报存在且未禁用的用户；同一用户对同一主页只能有一个待处理举报。创建成功后生成 `user_report` 待办。
+
+### 10.3 后台举报列表
 
 - Method：`GET`
 - Path：`/api/v1/admin/reports`
@@ -1037,7 +1100,7 @@
 
 - `status`：可选，`pending`、`resolved`、`rejected`。
 
-### 10.3 处理举报
+### 10.4 处理举报
 
 - Method：`POST`
 - Path：`/api/v1/admin/reports/{id}/resolve`
@@ -1310,3 +1373,9 @@
 - 待办：通过、驳回、下架、忽略。
 
 说明：路由级审计只在请求成功后写入；失败请求不会生成操作记录。待办处理会额外记录任务 ID 和备注。
+
+## 20. 2026-07-05 投稿预览补充
+
+- `POST /api/v1/articles/preview` 仅登录用户可用，入参与创建文章一致：`moduleId`、`title`、`summary`、`contentMd`、`sourceType`、`tags`。
+- 该接口只生成文章详情页预览数据，不落库、不创建审核任务、不发送通知。
+- 返回体复用 Article 返回结构，`id = 0`、`status = draft`、`publishedAt = null`，并按后端规则返回版块信息、标签、字数和预计阅读时间。

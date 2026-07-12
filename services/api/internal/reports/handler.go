@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"scholarbookstore/services/api/internal/auth"
 	httprequest "scholarbookstore/services/api/internal/http/request"
 	"scholarbookstore/services/api/internal/http/response"
@@ -54,6 +56,37 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if errors.Is(err, ErrConflict) {
 		response.Error(w, http.StatusConflict, "CONFLICT", "你已举报过该文章", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+	response.JSON(w, http.StatusCreated, report, nil)
+}
+
+func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	var req createReportRequest
+	if err := httprequest.DecodeJSON(r, &req); err != nil {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		return
+	}
+	report, err := h.service.CreateUser(r.Context(), chi.URLParam(r, "username"), user.ID, req.Reason)
+	if errors.Is(err, ErrInvalidInput) {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "举报原因不合法", nil)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "用户不存在", nil)
+		return
+	}
+	if errors.Is(err, ErrConflict) {
+		response.Error(w, http.StatusConflict, "CONFLICT", "你已举报过该用户", nil)
 		return
 	}
 	if err != nil {

@@ -67,7 +67,7 @@ export default function MyCommentsPage() {
         listMyArticles().catch(() => []),
         listBookmarks().catch(() => []),
         listMyComments().catch(() => []),
-        listFollowing().catch(() => []),
+        listFollowing().then((page) => page.users).catch(() => []),
         listFollowers().catch(() => []),
       ]);
     setData({ user, profile, articles, bookmarks, comments, following, followers });

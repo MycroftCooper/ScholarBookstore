@@ -7,6 +7,7 @@ import (
 
 type ReportRepository interface {
 	Create(ctx context.Context, articleID int64, reporterID int64, reason string) (Report, error)
+	CreateUser(ctx context.Context, username string, reporterID int64, reason string) (UserReport, error)
 	ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Report, int64, error)
 	Resolve(ctx context.Context, id int64, reviewerID int64, status string, note string, archiveArticle bool) (Report, error)
 }
@@ -29,6 +30,19 @@ func (s *Service) Create(ctx context.Context, articleID int64, reporterID int64,
 		return PublicReport{}, err
 	}
 	return ToPublic(item), nil
+}
+
+func (s *Service) CreateUser(ctx context.Context, username string, reporterID int64, reason string) (PublicUserReport, error) {
+	username = strings.TrimSpace(username)
+	reason = strings.TrimSpace(reason)
+	if username == "" || reporterID <= 0 || reason == "" || len([]rune(reason)) > 1000 {
+		return PublicUserReport{}, ErrInvalidInput
+	}
+	item, err := s.repo.CreateUser(ctx, username, reporterID, reason)
+	if err != nil {
+		return PublicUserReport{}, err
+	}
+	return ToPublicUserReport(item), nil
 }
 
 func (s *Service) ListAdmin(ctx context.Context, status string, page int, pageSize int) (Page, error) {

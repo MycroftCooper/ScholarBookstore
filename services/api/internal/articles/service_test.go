@@ -29,6 +29,13 @@ func (r *fakeArticleRepo) FindPublishedByID(_ context.Context, id int64) (Articl
 	return Article{ID: id, Title: "published", ContentMD: "body", Status: "published", ViewCount: int64(r.views)}, nil
 }
 
+func (r *fakeArticleRepo) FindPreviewModule(_ context.Context, id int64) (PreviewModule, error) {
+	if id != 1 {
+		return PreviewModule{}, ErrNotFound
+	}
+	return PreviewModule{ID: id, Slug: "backend", Name: "Backend"}, nil
+}
+
 func (r *fakeArticleRepo) IncrementViewCount(_ context.Context, id int64) error {
 	if id != 1 {
 		return ErrNotFound
@@ -178,6 +185,39 @@ func TestCreateAllowsEmptyDraftContent(t *testing.T) {
 	}
 	if article.Status != "draft" || repo.created.Status != "draft" {
 		t.Fatalf("unexpected draft status: article=%s input=%s", article.Status, repo.created.Status)
+	}
+}
+
+func TestPreviewBuildsUnsavedArticle(t *testing.T) {
+	repo := &fakeArticleRepo{}
+	service := NewService(repo)
+
+	article, err := service.Preview(context.Background(), PreviewArticleInput{
+		ModuleID:       1,
+		AuthorID:       2,
+		AuthorUsername: "alice",
+		Title:          " Preview title ",
+		Summary:        " Summary ",
+		ContentMD:      " Hello preview ",
+		Tags:           []string{"Go", "Go", "API"},
+	})
+	if err != nil {
+		t.Fatalf("preview article: %v", err)
+	}
+	if article.ID != 0 || article.Status != "draft" || article.PublishedAt != nil {
+		t.Fatalf("preview should be unsaved draft: %#v", article)
+	}
+	if article.Title != "Preview title" || article.ModuleSlug != "backend" || article.AuthorUsername != "alice" {
+		t.Fatalf("unexpected preview article: %#v", article)
+	}
+	if article.WordCount != 12 || article.ReadingMinutes != 1 {
+		t.Fatalf("unexpected preview metrics: words=%d minutes=%d", article.WordCount, article.ReadingMinutes)
+	}
+	if len(article.Tags) != 2 || article.Tags[0].Slug != "go" || article.Tags[1].Slug != "api" {
+		t.Fatalf("unexpected preview tags: %#v", article.Tags)
+	}
+	if repo.created.Title != "" {
+		t.Fatalf("preview should not create article: %#v", repo.created)
 	}
 }
 

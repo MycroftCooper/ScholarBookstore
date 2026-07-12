@@ -7,7 +7,7 @@ import {
 } from "@/components/articles/ArticleEditorShowcase";
 import { SiteFrame } from "@/components/layout/SiteFrame";
 import { createArticle, type ArticleSummary } from "@/lib/api/articles";
-import { getCurrentUser } from "@/lib/api/auth";
+import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { listModules, type ModuleSummary } from "@/lib/api/modules";
 
@@ -25,6 +25,7 @@ const initialValues: ArticleEditorValues = {
 
 export default function MeSubmitPage() {
   const [modules, setModules] = useState<ModuleSummary[]>([]);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [values, setValues] = useState<ArticleEditorValues>(initialValues);
   const [loading, setLoading] = useState(true);
   const [savingStatus, setSavingStatus] = useState<SubmitStatus | null>(null);
@@ -35,8 +36,9 @@ export default function MeSubmitPage() {
   useEffect(() => {
     async function load() {
       try {
-        await getCurrentUser();
+        const user = await getCurrentUser();
         const items = await listModules();
+        setCurrentUser(user);
         setModules(items);
         setValues((current) => ({
           ...current,
@@ -102,6 +104,8 @@ export default function MeSubmitPage() {
         mode="create"
         modules={modules}
         values={values}
+        previewAuthorId={currentUser?.id}
+        previewAuthorUsername={currentUser?.username}
         loading={loading}
         uploadingImage={uploadingImage}
         savingStatus={savingStatus}

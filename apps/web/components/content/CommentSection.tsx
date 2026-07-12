@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { UserAvatar } from "@/components/users/UserAvatar";
 import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
@@ -19,6 +19,27 @@ type CommentSectionProps = {
 };
 
 const pageSize = 10;
+const commentAnchorPrefix = "comment-";
+
+function commentDomId(commentId: number) {
+  return `${commentAnchorPrefix}${commentId}`;
+}
+
+function parseCommentHash() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const match = window.location.hash.match(/^#comment-(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  const id = Number(match[1]);
+  return Number.isFinite(id) ? id : null;
+}
+
+function hasComment(items: CommentItem[], commentId: number) {
+  return items.some((item) => item.id === commentId);
+}
 
 export function CommentSection({ articleId, initialCount = 0 }: CommentSectionProps) {
   const [comments, setComments] = useState<CommentItem[]>([]);
@@ -34,6 +55,9 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
   const [loadingMore, setLoadingMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [targetCommentId, setTargetCommentId] = useState<number | null>(null);
+  const [highlightedCommentId, setHighlightedCommentId] = useState<number | null>(null);
+  const anchorSearchRef = useRef<number | null>(null);
 
   async function loadComments(nextPage = 1, append = false) {
     try {
@@ -42,12 +66,13 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
       setComments((current) => (append ? [...current, ...items] : items));
       setPage(nextPage);
       setHasMore(items.filter((item) => item.parentId === null).length >= pageSize);
+      return items;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setLoginRequired(true);
         setComments([]);
         setHasMore(false);
-        return;
+        return [];
       }
       throw err;
     }
@@ -60,6 +85,8 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
     setPage(1);
     setHasMore(false);
     setLoginRequired(false);
+    setHighlightedCommentId(null);
+    setTargetCommentId(parseCommentHash());
 
     Promise.all([
       loadComments(1, false),
@@ -76,6 +103,84 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
       .catch(() => setError("评论加载失败，请稍后重试"))
       .finally(() => setLoading(false));
   }, [articleId, sort]);
+
+  useEffect(() => {
+    function syncHashTarget() {
+      setTargetCommentId(parseCommentHash());
+      setHighlightedCommentId(null);
+      anchorSearchRef.current = null;
+    }
+
+    syncHashTarget();
+    window.addEventListener("hashchange", syncHashTarget);
+    return () => window.removeEventListener("hashchange", syncHashTarget);
+  }, [articleId]);
+
+  useEffect(() => {
+    if (!targetCommentId || loading || loginRequired) {
+      return;
+    }
+
+    if (hasComment(comments, targetCommentId)) {
+      setHighlightedCommentId(targetCommentId);
+      window.requestAnimationFrame(() => {
+        document.getElementById(commentDomId(targetCommentId))?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+      return;
+    }
+
+    if (!hasMore || anchorSearchRef.current === targetCommentId) {
+      return;
+    }
+
+    const searchedCommentId = targetCommentId;
+    anchorSearchRef.current = searchedCommentId;
+    let cancelled = false;
+
+    async function searchRemainingPages() {
+      let nextPage = page + 1;
+      let currentItems = comments;
+      let more = hasMore;
+
+      try {
+        while (!cancelled && more && !hasComment(currentItems, searchedCommentId)) {
+          const items = await listComments(articleId, sort, nextPage, pageSize);
+          currentItems = [...currentItems, ...items];
+          more = items.filter((item) => item.parentId === null).length >= pageSize;
+
+          setComments(currentItems);
+          setPage(nextPage);
+          setHasMore(more);
+          nextPage += 1;
+        }
+
+        if (!cancelled && !hasComment(currentItems, searchedCommentId)) {
+          setError("没有找到对应评论，可能已被删除或暂不可见。");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          if (err instanceof ApiError && err.status === 401) {
+            setLoginRequired(true);
+            return;
+          }
+          setError("定位评论失败，请稍后重试。");
+        }
+      } finally {
+        if (!cancelled) {
+          anchorSearchRef.current = null;
+        }
+      }
+    }
+
+    searchRemainingPages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [articleId, comments, hasMore, loading, loginRequired, page, sort, targetCommentId]);
 
   const topLevelComments = useMemo(
     () => comments.filter((comment) => comment.parentId === null),
@@ -293,6 +398,7 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
                 setReplyContent((current) => ({ ...current, [comment.id]: value }))
               }
               onReplySubmit={() => handleReply(comment.id)}
+              highlightedCommentId={highlightedCommentId}
             />
           ))}
         </div>
@@ -325,6 +431,7 @@ function CommentCard({
   onReplyToggle,
   onReplyChange,
   onReplySubmit,
+  highlightedCommentId,
 }: {
   comment: CommentItem;
   replies: CommentItem[];
@@ -338,11 +445,20 @@ function CommentCard({
   onReplyToggle: () => void;
   onReplyChange: (value: string) => void;
   onReplySubmit: () => void;
+  highlightedCommentId: number | null;
 }) {
   const unavailable = comment.deleted || comment.visibility === "hidden";
+  const commentHighlighted = highlightedCommentId === comment.id;
 
   return (
-    <article className="border-b border-[var(--color-line)] pb-4 last:border-b-0">
+    <article
+      id={commentDomId(comment.id)}
+      className={`scroll-mt-24 rounded-md border-b border-[var(--color-line)] pb-4 transition ${
+        commentHighlighted
+          ? "bg-[rgba(242,194,0,0.12)] px-3 pt-3 ring-2 ring-[var(--color-accent)]"
+          : ""
+      } last:border-b-0`}
+    >
       <div className="flex gap-3">
         <UserAvatar username={comment.authorUsername} size="sm" />
         <div className="min-w-0 flex-1">
@@ -391,8 +507,16 @@ function CommentCard({
 
           {replies.length > 0 && (
             <div className="mt-3 grid gap-2 border-l border-[var(--color-line)] pl-4">
-              {replies.map((reply) => (
-                <div key={reply.id} className="rounded-md bg-[var(--color-surface-solid)] p-3">
+              {replies.map((reply) => {
+                const replyHighlighted = highlightedCommentId === reply.id;
+                return (
+                  <div
+                    key={reply.id}
+                    id={commentDomId(reply.id)}
+                    className={`scroll-mt-24 rounded-md bg-[var(--color-surface-solid)] p-3 transition ${
+                      replyHighlighted ? "ring-2 ring-[var(--color-accent)]" : ""
+                    }`}
+                  >
                   <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
                     <span className="font-semibold text-[var(--color-ink)]">{reply.authorUsername}</span>
                     {reply.replyToUsername && <span>回复 {reply.replyToUsername}</span>}
@@ -409,8 +533,9 @@ function CommentCard({
                       </button>
                     )}
                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

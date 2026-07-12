@@ -41,6 +41,51 @@ func (r *fakeFollowRepo) ListFollowers(_ context.Context, userID int64) ([]UserS
 	return []UserSummary{{ID: 3, Username: "follower"}}, nil
 }
 
+func (r *fakeFollowRepo) ListRecommendedUsers(_ context.Context, userID int64, _ int) ([]UserSummary, error) {
+	r.userID = userID
+	return []UserSummary{{ID: 4, Username: "recommended", PublishedArticleCount: 3, FollowersCount: 2}}, nil
+}
+
+func (r *fakeFollowRepo) FollowModule(_ context.Context, followerID int64, slug string) (TargetState, error) {
+	r.followerID = followerID
+	return TargetState{Slug: slug, Following: true}, nil
+}
+
+func (r *fakeFollowRepo) UnfollowModule(_ context.Context, followerID int64, slug string) (TargetState, error) {
+	r.followerID = followerID
+	return TargetState{Slug: slug, Following: false}, nil
+}
+
+func (r *fakeFollowRepo) ModuleState(_ context.Context, viewerID int64, slug string) (TargetState, error) {
+	r.viewerID = viewerID
+	return TargetState{Slug: slug, Following: true}, nil
+}
+
+func (r *fakeFollowRepo) FollowDomain(_ context.Context, followerID int64, id int64) (TargetState, error) {
+	r.followerID = followerID
+	return TargetState{ID: id, Following: true}, nil
+}
+
+func (r *fakeFollowRepo) UnfollowDomain(_ context.Context, followerID int64, id int64) (TargetState, error) {
+	r.followerID = followerID
+	return TargetState{ID: id, Following: false}, nil
+}
+
+func (r *fakeFollowRepo) DomainState(_ context.Context, viewerID int64, id int64) (TargetState, error) {
+	r.viewerID = viewerID
+	return TargetState{ID: id, Following: true}, nil
+}
+
+func (r *fakeFollowRepo) ListFollowingModules(_ context.Context, userID int64) ([]ModuleSummary, error) {
+	r.userID = userID
+	return []ModuleSummary{{ID: 1, Slug: "database"}}, nil
+}
+
+func (r *fakeFollowRepo) ListFollowingDomains(_ context.Context, userID int64) ([]DomainSummary, error) {
+	r.userID = userID
+	return []DomainSummary{{ID: 1, Slug: "backend"}}, nil
+}
+
 func TestFollowTrimsUsernameAndForwardsFollower(t *testing.T) {
 	repo := &fakeFollowRepo{}
 	service := NewService(repo)
@@ -73,5 +118,8 @@ func TestFollowListsRequireAuthenticatedUser(t *testing.T) {
 	}
 	if _, err := service.ListFollowers(context.Background(), 0); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("ListFollowers error = %v, want ErrForbidden", err)
+	}
+	if _, err := service.ListRecommendedUsers(context.Background(), 0, 6); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("ListRecommendedUsers error = %v, want ErrForbidden", err)
 	}
 }

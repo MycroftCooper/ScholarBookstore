@@ -37,6 +37,11 @@ type ArticleDetailShowcaseProps = {
   id: string;
 };
 
+type ArticlePreviewShowcaseProps = {
+  article: ArticleSummary;
+  onClose: () => void;
+};
+
 export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
   const articleId = Number(id);
   const [article, setArticle] = useState<ArticleSummary | null>(null);
@@ -313,6 +318,55 @@ export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
   );
 }
 
+export function ArticlePreviewShowcase({ article, onClose }: ArticlePreviewShowcaseProps) {
+  const toc = useMemo(() => buildMarkdownToc(article.contentMd ?? ""), [article.contentMd]);
+  const tags = article.tags ?? [];
+
+  return (
+    <div className="relative mx-auto max-w-7xl px-4 py-6 md:px-6 lg:px-8">
+      <div className="mb-5 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
+        <button type="button" onClick={onClose} className="hover:text-[var(--color-ink)]">
+          返回编辑
+        </button>
+        <span>//</span>
+        <span>{article.moduleName}</span>
+        <span>//</span>
+        <span>预览</span>
+      </div>
+
+      <section className="mb-5 rounded-md border border-amber-300 bg-amber-50 px-5 py-4 text-sm font-semibold text-amber-900 shadow-[var(--shadow-soft)]">
+        文章未发布，当前为预览中。这里展示的是读者打开文章详情页时看到的排版效果，预览不会保存草稿或提交审核。
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <main className="min-w-0 space-y-5">
+          <ArticleHero
+            article={article}
+            bookmarkState={null}
+            bookmarking={false}
+            commentCount={0}
+            likeCount={0}
+            onBookmarkToggle={() => undefined}
+            preview
+          />
+
+          {article.summary && <SummaryBox summary={article.summary} />}
+
+          <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-soft)] md:p-7">
+            <MarkdownContent content={article.contentMd || "暂无正文内容。"} />
+          </section>
+        </main>
+
+        <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
+          <TocPanel toc={toc} />
+          <TagPanel tags={tags} />
+          <InfoPanel article={article} />
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 function ArticleHero({
   article,
   bookmarkState,
@@ -320,6 +374,7 @@ function ArticleHero({
   commentCount,
   likeCount,
   onBookmarkToggle,
+  preview = false,
 }: {
   article: ArticleSummary;
   bookmarkState: BookmarkState | null;
@@ -327,6 +382,7 @@ function ArticleHero({
   commentCount: number;
   likeCount: number;
   onBookmarkToggle: () => void;
+  preview?: boolean;
 }) {
   return (
     <section className="relative overflow-hidden rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-soft)] md:p-8">
@@ -354,7 +410,7 @@ function ArticleHero({
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
           <TagList tags={article.tags ?? []} moduleName={article.moduleName} />
-          <div className="flex gap-3 text-sm font-semibold">
+          {!preview && <div className="flex gap-3 text-sm font-semibold">
             {bookmarkState ? (
               <button
                 type="button"
@@ -379,7 +435,7 @@ function ArticleHero({
             >
               分享
             </button>
-          </div>
+          </div>}
         </div>
       </div>
     </section>

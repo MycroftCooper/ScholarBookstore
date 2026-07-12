@@ -29,6 +29,8 @@ export type PublicAuthorProfile = {
   followingCount: number;
   bookmarkCount: number;
   articles: AuthorArticle[];
+  followingModules: FollowModule[];
+  followingDomains: FollowDomain[];
 };
 
 export function getPublicAuthorProfile(username: string) {
@@ -50,7 +52,34 @@ export type FollowUser = {
   username: string;
   avatarUrl: string;
   bio: string;
+  publishedArticleCount: number;
+  followersCount: number;
   createdAt: string;
+};
+
+export type FollowModule = {
+  id: number;
+  domainId: number;
+  domainSlug: string;
+  domainName: string;
+  slug: string;
+  name: string;
+  description: string;
+  createdAt: string;
+};
+
+export type FollowDomain = {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  createdAt: string;
+};
+
+export type FollowingPage = {
+  users: FollowUser[];
+  modules: FollowModule[];
+  domains: FollowDomain[];
 };
 
 export function getFollowState(username: string) {
@@ -70,9 +99,13 @@ export function unfollowUser(username: string) {
 }
 
 export function listFollowing() {
-  return apiRequest<FollowUser[]>("/me/following");
+  return apiRequest<FollowingPage>("/me/following");
 }
 
 export function listFollowers() {
   return apiRequest<FollowUser[]>("/me/followers");
+}
+
+export function listRecommendedUsers(limit = 6) {
+  return apiRequest<FollowUser[]>(`/me/follow-recommendations?limit=${limit}`);
 }

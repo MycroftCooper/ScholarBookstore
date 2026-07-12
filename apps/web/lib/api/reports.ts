@@ -22,3 +22,26 @@ export function createArticleReport(articleId: number, reason: string) {
     body: JSON.stringify({ reason }),
   });
 }
+
+export type UserReport = {
+  id: number;
+  reportedUserId: number;
+  reportedUsername: string;
+  reporterId: number;
+  reporterName: string;
+  reason: string;
+  status: "pending" | "resolved" | "rejected";
+  handledBy: number | null;
+  handledByName: string | null;
+  handledAt: string | null;
+  handleNote: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function createUserReport(username: string, reason: string) {
+  return apiRequest<UserReport>(`/users/${encodeURIComponent(username)}/reports`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}

@@ -206,6 +206,59 @@ func (r *Repository) FindPublicAuthorProfile(ctx context.Context, username strin
 		return PublicAuthorProfile{}, 0, fmt.Errorf("iterate author articles: %w", err)
 	}
 
+	const followingModulesQuery = `
+		select m.id, d.id, d.slug, d.name, m.slug, m.name, m.description, mf.created_at
+		from module_follows mf
+		join modules m on m.id = mf.module_id
+		join domains d on d.id = m.domain_id
+		where mf.follower_id = $1
+			and m.is_active = true and m.deleted_at is null
+			and d.is_active = true and d.deleted_at is null
+		order by mf.created_at desc
+		limit 12
+	`
+	moduleRows, err := r.db.Query(ctx, followingModulesQuery, author.ID)
+	if err != nil {
+		return PublicAuthorProfile{}, 0, fmt.Errorf("query author following modules: %w", err)
+	}
+	defer moduleRows.Close()
+	author.FollowingModules = []AuthorFollowModule{}
+	for moduleRows.Next() {
+		var item AuthorFollowModule
+		if err := moduleRows.Scan(&item.ID, &item.DomainID, &item.DomainSlug, &item.DomainName, &item.Slug, &item.Name, &item.Description, &item.CreatedAt); err != nil {
+			return PublicAuthorProfile{}, 0, fmt.Errorf("scan author following module: %w", err)
+		}
+		author.FollowingModules = append(author.FollowingModules, item)
+	}
+	if err := moduleRows.Err(); err != nil {
+		return PublicAuthorProfile{}, 0, fmt.Errorf("iterate author following modules: %w", err)
+	}
+
+	const followingDomainsQuery = `
+		select d.id, d.slug, d.name, d.description, df.created_at
+		from domain_follows df
+		join domains d on d.id = df.domain_id
+		where df.follower_id = $1 and d.is_active = true and d.deleted_at is null
+		order by df.created_at desc
+		limit 12
+	`
+	domainRows, err := r.db.Query(ctx, followingDomainsQuery, author.ID)
+	if err != nil {
+		return PublicAuthorProfile{}, 0, fmt.Errorf("query author following domains: %w", err)
+	}
+	defer domainRows.Close()
+	author.FollowingDomains = []AuthorFollowDomain{}
+	for domainRows.Next() {
+		var item AuthorFollowDomain
+		if err := domainRows.Scan(&item.ID, &item.Slug, &item.Name, &item.Description, &item.CreatedAt); err != nil {
+			return PublicAuthorProfile{}, 0, fmt.Errorf("scan author following domain: %w", err)
+		}
+		author.FollowingDomains = append(author.FollowingDomains, item)
+	}
+	if err := domainRows.Err(); err != nil {
+		return PublicAuthorProfile{}, 0, fmt.Errorf("iterate author following domains: %w", err)
+	}
+
 	return author, total, nil
 }
 

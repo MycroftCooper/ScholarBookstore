@@ -15,6 +15,10 @@ func (r *fakeReportRepo) Create(_ context.Context, articleID int64, reporterID i
 	return Report{ID: 1, ArticleID: articleID, ReporterID: reporterID, Reason: reason, Status: "pending"}, nil
 }
 
+func (r *fakeReportRepo) CreateUser(_ context.Context, username string, reporterID int64, reason string) (UserReport, error) {
+	return UserReport{ID: 1, ReportedUsername: username, ReporterID: reporterID, Reason: reason, Status: "pending"}, nil
+}
+
 func (r *fakeReportRepo) ListAdmin(_ context.Context, status string, _ int, _ int) ([]Report, int64, error) {
 	return []Report{{ID: 1, Status: status}}, 1, nil
 }

@@ -140,6 +140,8 @@ export default function EditArticlePage() {
         modules={modules}
         values={values}
         articleId={article?.id}
+        previewAuthorId={article?.authorId}
+        previewAuthorUsername={article?.authorUsername}
         editable={isEditable}
         loading={loading}
         uploadingImage={uploadingImage}

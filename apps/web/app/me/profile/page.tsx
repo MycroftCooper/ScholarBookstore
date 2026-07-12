@@ -71,7 +71,7 @@ export default function ProfilePage() {
         listMyArticles().catch(() => []),
         listBookmarks().catch(() => []),
         listMyComments().catch(() => []),
-        listFollowing().catch(() => []),
+        listFollowing().then((page) => page.users).catch(() => []),
         listFollowers().catch(() => []),
       ]);
     setData({ user, profile, articles, bookmarks, comments, following, followers });
@@ -204,7 +204,6 @@ export default function ProfilePage() {
                 onCompanyChange={setCompany}
               />
               <DisplayPanel />
-              <CoverPanel />
 
               {saved && (
                 <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
@@ -433,9 +432,6 @@ function ContactPanel({
           <input value={maskEmail(user.email)} readOnly className={inputClass} />
           <p className="mt-1 text-xs text-[var(--color-muted)]">仅展示部分，完整邮箱对他人隐藏。</p>
         </Field>
-        <Field label="GitHub">
-          <input value="后续开放" readOnly className={inputClass} />
-        </Field>
         <Field label="组织 / 公司">
           <input
             value={company}
@@ -493,28 +489,6 @@ function DisplayPanel() {
   );
 }
 
-function CoverPanel() {
-  return (
-    <Panel title="个人封面">
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px]">
-        <div className="relative h-20 overflow-hidden rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)]">
-          <ContourLayer />
-        </div>
-        <button
-          type="button"
-          disabled
-          className="h-11 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] text-sm font-semibold text-[var(--color-muted)] opacity-70"
-        >
-          更换封面
-        </button>
-      </div>
-      <p className="mt-3 text-xs text-[var(--color-muted)]">
-        封面上传能力后续开放，建议尺寸 1600 x 400px。
-      </p>
-    </Panel>
-  );
-}
-
 function PreviewCard({ data, metrics }: { data: PageData; metrics: Metrics }) {
   return (
     <Panel
@@ -555,7 +529,6 @@ function CompletenessCard({ value }: { value: number }) {
     ["技术标签", true],
     ["联系方式", value >= 60],
     ["展示设置", false],
-    ["个人封面", false],
   ] as const;
   return (
     <Panel title="资料完整度">
@@ -585,7 +558,6 @@ function SuggestionCard() {
   const suggestions = [
     ["个人简介很棒", "你的简介清晰地展示了你的技术兴趣。"],
     ["添加更多技术标签", "标签越具体，越容易被同领域开发者发现。"],
-    ["完善个人封面", "一个独特封面能让你的主页更具辨识度。"],
   ];
   return (
     <Panel title="资料优化建议">

@@ -164,6 +164,28 @@ func (r *Repository) FindPublishedByID(ctx context.Context, id int64) (Article, 
 	return r.withTag(ctx, item), nil
 }
 
+func (r *Repository) FindPreviewModule(ctx context.Context, id int64) (PreviewModule, error) {
+	const query = `
+		select m.id, m.slug, m.name
+		from modules m
+		join domains d on d.id = m.domain_id
+		where m.id = $1
+			and m.deleted_at is null
+			and m.is_active = true
+			and d.deleted_at is null
+			and d.is_active = true
+	`
+	var module PreviewModule
+	err := r.db.QueryRow(ctx, query, id).Scan(&module.ID, &module.Slug, &module.Name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PreviewModule{}, ErrNotFound
+	}
+	if err != nil {
+		return PreviewModule{}, fmt.Errorf("find preview module: %w", err)
+	}
+	return module, nil
+}
+
 func (r *Repository) IncrementViewCount(ctx context.Context, id int64) error {
 	const query = `
 		update articles a

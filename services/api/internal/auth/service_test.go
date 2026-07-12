@@ -80,6 +80,17 @@ func TestRegisterHashesPassword(t *testing.T) {
 	}
 }
 
+func TestRegisterRequiresPasswordAtLeastEightCharacters(t *testing.T) {
+	service := NewService(testConfig(), &fakeUserRepo{})
+
+	if _, err := service.Register(context.Background(), "alice", "alice@example.com", "1234567"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("Register with 7-char password error = %v, want ErrInvalidInput", err)
+	}
+	if _, err := service.Register(context.Background(), "alice", "alice@example.com", "12345678"); err != nil {
+		t.Fatalf("Register with 8-char password: %v", err)
+	}
+}
+
 func TestLoginRejectsDisabledUser(t *testing.T) {
 	hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
 	if err != nil {

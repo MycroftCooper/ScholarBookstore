@@ -18,6 +18,22 @@ type Report struct {
 	UpdatedAt     time.Time
 }
 
+type UserReport struct {
+	ID               int64
+	ReportedUserID   int64
+	ReportedUsername string
+	ReporterID       int64
+	ReporterName     string
+	Reason           string
+	Status           string
+	HandledBy        *int64
+	HandledByName    *string
+	HandledAt        *time.Time
+	HandleNote       string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
 type PublicReport struct {
 	ID            int64      `json:"id"`
 	ArticleID     int64      `json:"articleId"`
@@ -32,6 +48,22 @@ type PublicReport struct {
 	HandleNote    string     `json:"handleNote"`
 	CreatedAt     time.Time  `json:"createdAt"`
 	UpdatedAt     time.Time  `json:"updatedAt"`
+}
+
+type PublicUserReport struct {
+	ID               int64      `json:"id"`
+	ReportedUserID   int64      `json:"reportedUserId"`
+	ReportedUsername string     `json:"reportedUsername"`
+	ReporterID       int64      `json:"reporterId"`
+	ReporterName     string     `json:"reporterName"`
+	Reason           string     `json:"reason"`
+	Status           string     `json:"status"`
+	HandledBy        *int64     `json:"handledBy"`
+	HandledByName    *string    `json:"handledByName"`
+	HandledAt        *time.Time `json:"handledAt"`
+	HandleNote       string     `json:"handleNote"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
 }
 
 type Page struct {
@@ -56,6 +88,24 @@ func ToPublic(item Report) PublicReport {
 		HandleNote:    item.HandleNote,
 		CreatedAt:     item.CreatedAt,
 		UpdatedAt:     item.UpdatedAt,
+	}
+}
+
+func ToPublicUserReport(item UserReport) PublicUserReport {
+	return PublicUserReport{
+		ID:               item.ID,
+		ReportedUserID:   item.ReportedUserID,
+		ReportedUsername: item.ReportedUsername,
+		ReporterID:       item.ReporterID,
+		ReporterName:     item.ReporterName,
+		Reason:           item.Reason,
+		Status:           item.Status,
+		HandledBy:        item.HandledBy,
+		HandledByName:    item.HandledByName,
+		HandledAt:        item.HandledAt,
+		HandleNote:       item.HandleNote,
+		CreatedAt:        item.CreatedAt,
+		UpdatedAt:        item.UpdatedAt,
 	}
 }
 

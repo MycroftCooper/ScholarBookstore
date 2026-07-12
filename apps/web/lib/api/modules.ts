@@ -36,6 +36,30 @@ export function getModule(slug: string) {
   return apiRequest<ModuleSummary>(`/modules/${encodeURIComponent(slug)}`);
 }
 
+export type ModuleFollowState = {
+  id: number;
+  slug: string;
+  name: string;
+  following: boolean;
+  followersCount: number;
+};
+
+export function getModuleFollowState(slug: string) {
+  return apiRequest<ModuleFollowState>(`/modules/${encodeURIComponent(slug)}/follow`);
+}
+
+export function followModule(slug: string) {
+  return apiRequest<ModuleFollowState>(`/modules/${encodeURIComponent(slug)}/follow`, {
+    method: "POST",
+  });
+}
+
+export function unfollowModule(slug: string) {
+  return apiRequest<ModuleFollowState>(`/modules/${encodeURIComponent(slug)}/follow`, {
+    method: "DELETE",
+  });
+}
+
 export function createModule(input: {
   domainId: number;
   slug: string;
