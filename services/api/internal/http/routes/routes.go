@@ -25,6 +25,7 @@ import (
 	"scholarbookstore/services/api/internal/http/response"
 	"scholarbookstore/services/api/internal/modules"
 	"scholarbookstore/services/api/internal/notifications"
+	"scholarbookstore/services/api/internal/observability"
 	"scholarbookstore/services/api/internal/reports"
 	"scholarbookstore/services/api/internal/tags"
 	apiuploads "scholarbookstore/services/api/internal/uploads"
@@ -38,9 +39,12 @@ type Dependencies struct {
 
 func New(deps Dependencies) http.Handler {
 	r := chi.NewRouter()
+	errorLogRepo := observability.NewRepository(deps.DB)
+	errorLogService := observability.NewService(errorLogRepo)
+
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
-	r.Use(chimiddleware.Recoverer)
+	r.Use(observability.Recoverer(errorLogService))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   deps.Config.CORSAllowedOrigins,
 		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
@@ -92,6 +96,7 @@ func New(deps Dependencies) http.Handler {
 	adminRepo := admin.NewRepository(deps.DB)
 	adminService := admin.NewService(adminRepo)
 	adminHandler := admin.NewHandler(adminService, articleService, reportService)
+	errorLogHandler := observability.NewHandler(errorLogService)
 	audit := func(action string, targetType string, targetParam string, detail map[string]string, next http.HandlerFunc) http.HandlerFunc {
 		return audited(adminService, action, targetType, targetParam, detail, next)
 	}
@@ -120,9 +125,11 @@ func New(deps Dependencies) http.Handler {
 		r.Get("/articles/{id}", articleHandler.DetailPublished)
 		r.Get("/tags", tagHandler.List)
 		r.Get("/users/{username}", userHandler.PublicAuthorProfile)
+		r.With(authmiddleware.OptionalAuth(deps.Config, authService)).Post("/client-logs/errors", errorLogHandler.CreateClientErrorLog)
 
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
+			r.Use(observability.Recoverer(errorLogService))
 			r.Patch("/me/profile", authHandler.UpdateProfile)
 			r.Post("/me/avatar", authHandler.UploadAvatar)
 			r.Get("/articles/{id}/comments", commentHandler.ListByArticle)
@@ -168,7 +175,11 @@ func New(deps Dependencies) http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
+			r.Use(observability.Recoverer(errorLogService))
 			r.Use(authmiddleware.RequireRole("admin"))
+			r.Get("/admin/error-logs", errorLogHandler.ListErrorLogs)
+			r.Delete("/admin/error-logs", errorLogHandler.DeleteAllErrorLogs)
+			r.Delete("/admin/error-logs/{id}", errorLogHandler.DeleteErrorLog)
 			r.Get("/admin/audit-logs", adminHandler.ListAuditLogs)
 			r.Post("/admin/domains", audit("domain_create", "domain", "", nil, domainHandler.Create))
 			r.Patch("/admin/domains/{id}", audit("domain_update", "domain", "id", nil, domainHandler.Update))
@@ -184,6 +195,7 @@ func New(deps Dependencies) http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
+			r.Use(observability.Recoverer(errorLogService))
 			r.Get("/admin/tasks", adminHandler.ListTasks)
 			r.Get("/admin/tasks/stats", adminHandler.TaskStats)
 			r.Get("/admin/tasks/{id}", adminHandler.TaskDetail)
@@ -205,6 +217,7 @@ func New(deps Dependencies) http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(authmiddleware.RequireAuth(deps.Config, authService))
+			r.Use(observability.Recoverer(errorLogService))
 			r.Use(authmiddleware.RequireRole("reviewer", "admin"))
 			r.Post("/admin/articles/{id}/archive", audit("article_archived", "article", "id", nil, articleHandler.Archive))
 			r.Post("/admin/articles/{id}/restore", audit("article_restored", "article", "id", nil, articleHandler.RestoreArchived))

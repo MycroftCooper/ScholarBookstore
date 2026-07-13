@@ -44,7 +44,9 @@ export function AuthForm({ mode, variant = "default" }: AuthFormProps) {
 
     try {
       if (isLogin) {
-        await login(email, password);
+        const user = await login(email, password);
+        window.location.href = user.role === "admin" || user.role === "reviewer" ? "/admin/tasks" : "/me";
+        return;
       } else {
         await register(username, email, password);
         await login(email, password);

@@ -10,7 +10,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 import { unreadNotificationCount } from "@/lib/api/notifications";
 
 type AdminShellProps = {
-  active: "dashboard" | "tasks" | "domains" | "modules" | "users" | "roles" | "audit";
+  active: "dashboard" | "tasks" | "domains" | "modules" | "users" | "roles" | "audit" | "errors";
   title: string;
   eyebrow?: string;
   children: ReactNode;
@@ -19,11 +19,12 @@ type AdminShellProps = {
 const navItems = [
   { key: "dashboard", href: "/admin/dashboard", label: "数据看板", icon: "▥" },
   { key: "tasks", href: "/admin/tasks", label: "待办事项", icon: "▤" },
-  { key: "domains", href: "/admin/domains", label: "领域管理", icon: "✧" },
-  { key: "modules", href: "/admin/modules", label: "版块管理", icon: "□" },
-  { key: "users", href: "/admin/users", label: "用户管理", icon: "♙" },
-  { key: "roles", href: "/admin/roles", label: "角色权限", icon: "♢" },
-  { key: "audit", href: "/admin/audit-logs", label: "操作日志", icon: "☷" },
+  { key: "domains", href: "/admin/domains", label: "领域管理", icon: "✧", adminOnly: true },
+  { key: "modules", href: "/admin/modules", label: "版块管理", icon: "□", adminOnly: true },
+  { key: "users", href: "/admin/users", label: "用户管理", icon: "♙", adminOnly: true },
+  { key: "roles", href: "/admin/roles", label: "角色权限", icon: "♢", adminOnly: true },
+  { key: "audit", href: "/admin/audit-logs", label: "操作日志", icon: "☷", adminOnly: true },
+  { key: "errors", href: "/admin/error-logs", label: "错误日志", icon: "!", adminOnly: true },
 ] as const;
 
 export function AdminShell({ active, title, eyebrow = "后台", children }: AdminShellProps) {
@@ -57,7 +58,7 @@ export function AdminShell({ active, title, eyebrow = "后台", children }: Admi
         </div>
 
         <nav className="mt-4 grid gap-2 px-4">
-          {navItems.map((item) => {
+          {navItems.filter((item) => !("adminOnly" in item) || user?.role === "admin").map((item) => {
             const selected = item.key === active || pathname === item.href;
             const badge = badges[item.key as keyof typeof badges] ?? 0;
             return (

@@ -1,6 +1,6 @@
 # 当前系统能力地图
 
-更新日期：2026-06-23
+更新日期：2026-07-12
 
 状态说明：
 
@@ -27,9 +27,10 @@
 | 通知 | 我的通知、未读数、单条已读、全部已读 | `/api/v1/me/notifications/*` | `notifications` | user+ | `/me/notifications` | `[x] 已实现并有测试` | `[x] 已同步` |
 | 举报 | 创建举报、后台列表、驳回、处理并下架 | `/api/v1/articles/{id}/reports`、`/api/v1/admin/reports/*` | `article_reports`、`articles` | user+/reviewer/admin | `/admin/tasks` | `[x] 已实现并有测试` | `[x] 已同步` |
 | Dashboard | 基础统计、30 天趋势 | `/api/v1/admin/dashboard` | 多表聚合 | reviewer/admin | `/admin/dashboard` | `[~] 已实现但测试不足` | `[x] 已同步` |
+| 错误日志 | 前端错误上报、服务端 panic 捕获、按堆栈指纹去重、后台查看、单条删除、清空全部 | `POST /api/v1/client-logs/errors`、`GET/DELETE /api/v1/admin/error-logs`、`DELETE /api/v1/admin/error-logs/{id}` | `error_logs` | 上报 public/user+；后台查看和清理 admin | `/admin/error-logs` | `[~] 已实现但测试不足` | `[x] 已同步` |
 | 上传 | 头像上传、文章图片上传、本地 uploads 存储 | `/api/v1/me/avatar`、`/api/v1/uploads/article-images` | `article_images` | user+ | 投稿页/资料页 | `[~] 已实现但测试不足` | `[x] 已同步` |
 | PWA | 安装、离线、manifest、service worker | 暂无 | 暂无 | public | 暂无 | `[defer] 后续迭代` | `[x] 已标注 defer` |
-| 邮件/S3/R2/复杂推荐/审计日志 | 生产增强能力 | 暂无 | 暂无 | 待定 | 暂无 | `[defer] 后续迭代` | `[x] 已标注 defer` |
+| 邮件/S3/R2/复杂推荐 | 生产增强能力 | 暂无 | 暂无 | 待定 | 暂无 | `[defer] 后续迭代` | `[x] 已标注 defer` |
 
 ## 当前验证入口
 
