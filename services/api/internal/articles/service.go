@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"scholarbookstore/services/api/internal/moderation"
 )
 
 var validStatuses = map[string]struct{}{
@@ -26,8 +28,11 @@ type ArticleRepository interface {
 	ListPublished(ctx context.Context, filter PublishedArticleFilter, page int, pageSize int) ([]Article, int64, error)
 	ListAdmin(ctx context.Context, filter AdminArticleFilter, page int, pageSize int) ([]Article, int64, error)
 	FindPublishedByID(ctx context.Context, id int64) (Article, error)
+	FindPublishedByIDForViewer(ctx context.Context, id int64, viewerID int64) (Article, error)
 	FindPreviewModule(ctx context.Context, id int64) (PreviewModule, error)
 	IncrementViewCount(ctx context.Context, id int64) error
+	SetVote(ctx context.Context, articleID int64, userID int64, value int) (Article, error)
+	ClearVote(ctx context.Context, articleID int64, userID int64) (Article, error)
 	ListMine(ctx context.Context, authorID int64, status string, page int, pageSize int) ([]Article, int64, error)
 	Create(ctx context.Context, input CreateArticleInput) (Article, error)
 	CreateRevision(ctx context.Context, originalID int64, authorID int64, input UpdateArticleInput) (Article, error)
@@ -43,11 +48,20 @@ type ArticleRepository interface {
 }
 
 type Service struct {
-	repo ArticleRepository
+	repo      ArticleRepository
+	penalties PenaltyChecker
 }
 
-func NewService(repo ArticleRepository) *Service {
-	return &Service{repo: repo}
+type PenaltyChecker interface {
+	HasActivePenalty(ctx context.Context, userID int64, penaltyType string) (bool, error)
+}
+
+func NewService(repo ArticleRepository, penaltyChecker ...PenaltyChecker) *Service {
+	var checker PenaltyChecker
+	if len(penaltyChecker) > 0 {
+		checker = penaltyChecker[0]
+	}
+	return &Service{repo: repo, penalties: checker}
 }
 
 func (s *Service) ListPublished(ctx context.Context, filter PublishedArticleFilter, page int, pageSize int) (Page, error) {
@@ -100,6 +114,43 @@ func (s *Service) FindPublishedByID(ctx context.Context, id int64) (PublicArticl
 	return ToPublic(item, true), nil
 }
 
+func (s *Service) FindPublishedByIDForViewer(ctx context.Context, id int64, viewerID int64) (PublicArticle, error) {
+	if id <= 0 {
+		return PublicArticle{}, ErrNotFound
+	}
+	if err := s.repo.IncrementViewCount(ctx, id); err != nil {
+		return PublicArticle{}, err
+	}
+	item, err := s.repo.FindPublishedByIDForViewer(ctx, id, viewerID)
+	if err != nil {
+		return PublicArticle{}, err
+	}
+	return ToPublic(item, true), nil
+}
+
+func (s *Service) Vote(ctx context.Context, articleID int64, userID int64, value int) (PublicArticle, error) {
+	if articleID <= 0 || userID <= 0 {
+		return PublicArticle{}, ErrNotFound
+	}
+	if value != -1 && value != 0 && value != 1 {
+		return PublicArticle{}, ErrInvalidInput
+	}
+
+	var (
+		item Article
+		err  error
+	)
+	if value == 0 {
+		item, err = s.repo.ClearVote(ctx, articleID, userID)
+	} else {
+		item, err = s.repo.SetVote(ctx, articleID, userID, value)
+	}
+	if err != nil {
+		return PublicArticle{}, err
+	}
+	return ToPublic(item, true), nil
+}
+
 func (s *Service) ListMine(ctx context.Context, authorID int64, status string, page int, pageSize int) (Page, error) {
 	page, pageSize = normalizePage(page, pageSize)
 	status = strings.TrimSpace(status)
@@ -142,6 +193,15 @@ func (s *Service) Create(ctx context.Context, input CreateArticleInput) (PublicA
 	}
 	if input.ModuleID <= 0 || input.AuthorID <= 0 || !validSubmissionStatus(input.Status) || !validSourceType(input.SourceType) || !validArticleText(input.Title, input.Summary, input.ContentMD, input.Status) {
 		return PublicArticle{}, ErrInvalidInput
+	}
+	if input.Status == "pending_review" {
+		banned, err := s.hasPenalty(ctx, input.AuthorID, moderation.PenaltyArticleCreateBanned)
+		if err != nil {
+			return PublicArticle{}, err
+		}
+		if banned {
+			return PublicArticle{}, ErrForbidden
+		}
 	}
 	tags, ok := normalizeTags(input.Tags)
 	if !ok {
@@ -265,6 +325,15 @@ func (s *Service) UpdateOwn(ctx context.Context, id int64, authorID int64, input
 			return PublicArticle{}, ErrInvalidInput
 		}
 	}
+	if targetStatus == "pending_review" {
+		banned, err := s.hasPenalty(ctx, authorID, moderation.PenaltyArticleCreateBanned)
+		if err != nil {
+			return PublicArticle{}, err
+		}
+		if banned {
+			return PublicArticle{}, ErrForbidden
+		}
+	}
 
 	current, err := s.repo.FindByIDForAuthor(ctx, id, authorID)
 	if err != nil {
@@ -294,6 +363,13 @@ func (s *Service) UpdateOwn(ctx context.Context, id int64, authorID int64, input
 		return PublicArticle{}, err
 	}
 	return ToPublic(item, true), nil
+}
+
+func (s *Service) hasPenalty(ctx context.Context, userID int64, penaltyType string) (bool, error) {
+	if s.penalties == nil {
+		return false, nil
+	}
+	return s.penalties.HasActivePenalty(ctx, userID, penaltyType)
 }
 
 func (s *Service) ListPendingReview(ctx context.Context, actorID int64, actorRole string, page int, pageSize int) (Page, error) {

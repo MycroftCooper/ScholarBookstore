@@ -79,7 +79,10 @@ truncate table
   error_logs,
   audit_logs,
   moderation_tasks,
+  moderation_penalties,
   article_images,
+  comment_reports,
+  user_reports,
   article_reports,
   article_bookmarks,
   bookmark_collections,
@@ -254,6 +257,15 @@ func (e *SmokeEnv) ArticleStatus(id int64) string {
 	var status string
 	if err := e.DB.QueryRow(e.Ctx, `select status from articles where id = $1`, id).Scan(&status); err != nil {
 		e.T.Fatalf("query article status: %v", err)
+	}
+	return status
+}
+
+func (e *SmokeEnv) UserStatus(id int64) string {
+	e.T.Helper()
+	var status string
+	if err := e.DB.QueryRow(e.Ctx, `select status from users where id = $1`, id).Scan(&status); err != nil {
+		e.T.Fatalf("query user status: %v", err)
 	}
 	return status
 }

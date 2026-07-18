@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"scholarbookstore/services/api/internal/moderation"
 	"scholarbookstore/services/api/internal/notifications"
 )
 
@@ -33,6 +34,7 @@ type NotificationRepository interface {
 type Service struct {
 	comments      CommentRepository
 	notifications NotificationRepository
+	penalties     PenaltyChecker
 }
 
 type Page struct {
@@ -42,10 +44,19 @@ type Page struct {
 	Comments []PublicComment
 }
 
-func NewService(commentRepo CommentRepository, notificationRepo NotificationRepository) *Service {
+type PenaltyChecker interface {
+	HasActivePenalty(ctx context.Context, userID int64, penaltyType string) (bool, error)
+}
+
+func NewService(commentRepo CommentRepository, notificationRepo NotificationRepository, penaltyChecker ...PenaltyChecker) *Service {
+	var checker PenaltyChecker
+	if len(penaltyChecker) > 0 {
+		checker = penaltyChecker[0]
+	}
 	return &Service{
 		comments:      commentRepo,
 		notifications: notificationRepo,
+		penalties:     checker,
 	}
 }
 
@@ -98,6 +109,13 @@ func (s *Service) CreateTopLevel(ctx context.Context, authorID int64, articleID 
 	content = strings.TrimSpace(content)
 	if authorID <= 0 || articleID <= 0 || !validContent(content) {
 		return PublicComment{}, ErrInvalidInput
+	}
+	banned, err := s.hasPenalty(ctx, authorID, moderation.PenaltyCommentCreateBanned)
+	if err != nil {
+		return PublicComment{}, err
+	}
+	if banned {
+		return PublicComment{}, ErrForbidden
 	}
 
 	tx, err := s.comments.Begin(ctx)
@@ -160,6 +178,13 @@ func (s *Service) Reply(ctx context.Context, authorID int64, parentID int64, con
 	if authorID <= 0 || parentID <= 0 || !validContent(content) {
 		return PublicComment{}, ErrInvalidInput
 	}
+	banned, err := s.hasPenalty(ctx, authorID, moderation.PenaltyCommentCreateBanned)
+	if err != nil {
+		return PublicComment{}, err
+	}
+	if banned {
+		return PublicComment{}, ErrForbidden
+	}
 
 	tx, err := s.comments.Begin(ctx)
 	if err != nil {
@@ -193,6 +218,13 @@ func (s *Service) Reply(ctx context.Context, authorID int64, parentID int64, con
 	}
 
 	return ToPublic(reply), nil
+}
+
+func (s *Service) hasPenalty(ctx context.Context, userID int64, penaltyType string) (bool, error) {
+	if s.penalties == nil {
+		return false, nil
+	}
+	return s.penalties.HasActivePenalty(ctx, userID, penaltyType)
 }
 
 func (s *Service) Delete(ctx context.Context, id int64, userID int64, role string) error {

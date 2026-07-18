@@ -93,6 +93,59 @@ func (r *Repository) CreateUser(ctx context.Context, username string, reporterID
 	return item, nil
 }
 
+func (r *Repository) CreateComment(ctx context.Context, commentID int64, reporterID int64, reason string) (CommentReport, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return CommentReport{}, fmt.Errorf("begin comment report: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var authorID int64
+	err = tx.QueryRow(ctx, `
+		select c.author_id
+		from comments c
+		join articles a on a.id = c.article_id
+		where c.id = $1
+			and c.visibility = 'visible'
+			and c.deleted_at is null
+			and a.status = 'published'
+			and a.deleted_at is null
+	`, commentID).Scan(&authorID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CommentReport{}, ErrNotFound
+	}
+	if err != nil {
+		return CommentReport{}, fmt.Errorf("find reported comment: %w", err)
+	}
+	if authorID == reporterID {
+		return CommentReport{}, ErrInvalidInput
+	}
+
+	var id int64
+	err = tx.QueryRow(ctx, `
+		insert into comment_reports (comment_id, reporter_id, reason)
+		values ($1, $2, $3)
+		returning id
+	`, commentID, reporterID, reason).Scan(&id)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return CommentReport{}, ErrConflict
+		}
+		return CommentReport{}, fmt.Errorf("create comment report: %w", err)
+	}
+	if err := r.createCommentReportTask(ctx, tx, id); err != nil {
+		return CommentReport{}, err
+	}
+	item, err := r.findCommentReportByID(ctx, tx, id)
+	if err != nil {
+		return CommentReport{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return CommentReport{}, fmt.Errorf("commit comment report: %w", err)
+	}
+	return item, nil
+}
+
 func (r *Repository) ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Report, int64, error) {
 	args := []interface{}{}
 	filter := "ar.deleted_at is null"
@@ -179,6 +232,112 @@ func (r *Repository) Resolve(ctx context.Context, id int64, reviewerID int64, st
 	return item, nil
 }
 
+func (r *Repository) ResolveUser(ctx context.Context, id int64, reviewerID int64, status string, note string, disableUser bool) (UserReport, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return UserReport{}, fmt.Errorf("begin resolve user report: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var updatedID int64
+	var reportedUserID int64
+	err = tx.QueryRow(ctx, `
+		update user_reports
+		set status = $2, handled_by = $3, handled_at = now(), handle_note = $4, updated_at = now()
+		where id = $1 and status = 'pending' and deleted_at is null
+		returning id, reported_user_id
+	`, id, status, reviewerID, note).Scan(&updatedID, &reportedUserID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		exists, err := r.userReportExists(ctx, tx, id)
+		if err != nil {
+			return UserReport{}, err
+		}
+		if exists {
+			return UserReport{}, ErrConflict
+		}
+		return UserReport{}, ErrNotFound
+	}
+	if err != nil {
+		return UserReport{}, fmt.Errorf("resolve user report: %w", err)
+	}
+
+	if disableUser {
+		cmd, err := tx.Exec(ctx, `
+			update users
+			set status = 'disabled', updated_at = now()
+			where id = $1 and status = 'active' and deleted_at is null
+		`, reportedUserID)
+		if err != nil {
+			return UserReport{}, fmt.Errorf("disable reported user: %w", err)
+		}
+		if cmd.RowsAffected() == 0 {
+			return UserReport{}, ErrConflict
+		}
+	}
+
+	item, err := r.findUserReportByID(ctx, tx, updatedID)
+	if err != nil {
+		return UserReport{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return UserReport{}, fmt.Errorf("commit resolve user report: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) ResolveComment(ctx context.Context, id int64, reviewerID int64, status string, note string, hideComment bool) (CommentReport, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return CommentReport{}, fmt.Errorf("begin resolve comment report: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var updatedID int64
+	var commentID int64
+	err = tx.QueryRow(ctx, `
+		update comment_reports
+		set status = $2, handled_by = $3, handled_at = now(), handle_note = $4, updated_at = now()
+		where id = $1 and status = 'pending' and deleted_at is null
+		returning id, comment_id
+	`, id, status, reviewerID, note).Scan(&updatedID, &commentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		exists, err := r.commentReportExists(ctx, tx, id)
+		if err != nil {
+			return CommentReport{}, err
+		}
+		if exists {
+			return CommentReport{}, ErrConflict
+		}
+		return CommentReport{}, ErrNotFound
+	}
+	if err != nil {
+		return CommentReport{}, fmt.Errorf("resolve comment report: %w", err)
+	}
+
+	if hideComment {
+		cmd, err := tx.Exec(ctx, `
+			update comments
+			set visibility = 'hidden', updated_at = now()
+			where id = $1 and visibility = 'visible' and deleted_at is null
+		`, commentID)
+		if err != nil {
+			return CommentReport{}, fmt.Errorf("hide reported comment: %w", err)
+		}
+		if cmd.RowsAffected() == 0 {
+			return CommentReport{}, ErrConflict
+		}
+	}
+
+	item, err := r.findCommentReportByID(ctx, tx, updatedID)
+	if err != nil {
+		return CommentReport{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return CommentReport{}, fmt.Errorf("commit resolve comment report: %w", err)
+	}
+	return item, nil
+}
+
 func (r *Repository) FindByID(ctx context.Context, id int64) (Report, error) {
 	return r.findByID(ctx, r.db, id)
 }
@@ -193,6 +352,34 @@ func (r *Repository) reportExists(ctx context.Context, db queryer, id int64) (bo
 	`, id).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check report existence: %w", err)
+	}
+	return exists, nil
+}
+
+func (r *Repository) userReportExists(ctx context.Context, db queryer, id int64) (bool, error) {
+	var exists bool
+	err := db.QueryRow(ctx, `
+		select exists (
+			select 1 from user_reports
+			where id = $1 and deleted_at is null
+		)
+	`, id).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check user report existence: %w", err)
+	}
+	return exists, nil
+}
+
+func (r *Repository) commentReportExists(ctx context.Context, db queryer, id int64) (bool, error) {
+	var exists bool
+	err := db.QueryRow(ctx, `
+		select exists (
+			select 1 from comment_reports
+			where id = $1 and deleted_at is null
+		)
+	`, id).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check comment report existence: %w", err)
 	}
 	return exists, nil
 }
@@ -304,6 +491,93 @@ func (r *Repository) createUserReportTask(ctx context.Context, db execQueryer, r
 	return nil
 }
 
+func (r *Repository) createCommentReportTask(ctx context.Context, db execQueryer, reportID int64) error {
+	const query = `
+		insert into moderation_tasks (
+			task_type, object_type, object_id, domain_id, module_id,
+			title, summary, status, priority, submitter_id, assignee_id
+		)
+		select
+			'comment_report',
+			'comment_report',
+			cr.id,
+			m.domain_id,
+			m.id,
+			'评论举报：' || left(c.content, 80),
+			left(cr.reason, 500),
+			'pending',
+			1,
+			cr.reporter_id,
+			coalesce(mm.user_id, domain_owner.user_id, admin_user.id)
+		from comment_reports cr
+		join comments c on c.id = cr.comment_id
+		join articles a on a.id = c.article_id
+		join modules m on m.id = a.module_id
+		left join lateral (
+			select user_id
+			from module_moderators
+			where module_id = m.id
+			order by created_at asc, user_id asc
+			limit 1
+		) mm on true
+		left join lateral (
+			select user_id
+			from domain_owners
+			where domain_id = m.domain_id
+			order by created_at asc, user_id asc
+			limit 1
+		) domain_owner on mm.user_id is null
+		left join lateral (
+			select id
+			from users
+			where role = 'admin' and status = 'active' and deleted_at is null
+			order by id asc
+			limit 1
+		) admin_user on mm.user_id is null and domain_owner.user_id is null
+		where cr.id = $1
+			and cr.status = 'pending'
+			and cr.deleted_at is null
+		on conflict (task_type, object_type, object_id)
+		where status in ('pending', 'processing')
+		do update set
+			title = excluded.title,
+			summary = excluded.summary,
+			domain_id = excluded.domain_id,
+			module_id = excluded.module_id,
+			submitter_id = excluded.submitter_id,
+			assignee_id = excluded.assignee_id,
+			updated_at = now()
+	`
+	if _, err := db.Exec(ctx, query, reportID); err != nil {
+		return fmt.Errorf("create comment report task: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) findCommentReportByID(ctx context.Context, db queryer, id int64) (CommentReport, error) {
+	const query = `
+		select
+			cr.id, cr.comment_id, c.content, c.author_id, a.id, a.title,
+			cr.reporter_id, reporter.username,
+			cr.reason, cr.status, cr.handled_by, handler.username,
+			cr.handled_at, cr.handle_note, cr.created_at, cr.updated_at
+		from comment_reports cr
+		join comments c on c.id = cr.comment_id
+		join articles a on a.id = c.article_id
+		join users reporter on reporter.id = cr.reporter_id
+		left join users handler on handler.id = cr.handled_by
+		where cr.id = $1 and cr.deleted_at is null
+	`
+	item, err := scanCommentReport(db.QueryRow(ctx, query, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CommentReport{}, ErrNotFound
+	}
+	if err != nil {
+		return CommentReport{}, err
+	}
+	return item, nil
+}
+
 func (r *Repository) findUserReportByID(ctx context.Context, db queryer, id int64) (UserReport, error) {
 	const query = `
 		select
@@ -401,6 +675,19 @@ func scanUserReport(scanner reportScanner) (UserReport, error) {
 		&item.HandledAt, &item.HandleNote, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return UserReport{}, fmt.Errorf("scan user report: %w", err)
+	}
+	return item, nil
+}
+
+func scanCommentReport(scanner reportScanner) (CommentReport, error) {
+	var item CommentReport
+	if err := scanner.Scan(
+		&item.ID, &item.CommentID, &item.CommentContent, &item.CommentAuthorID,
+		&item.ArticleID, &item.ArticleTitle, &item.ReporterID, &item.ReporterName,
+		&item.Reason, &item.Status, &item.HandledBy, &item.HandledByName,
+		&item.HandledAt, &item.HandleNote, &item.CreatedAt, &item.UpdatedAt,
+	); err != nil {
+		return CommentReport{}, fmt.Errorf("scan comment report: %w", err)
 	}
 	return item, nil
 }

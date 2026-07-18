@@ -9,6 +9,8 @@ import {
   MarkdownContent,
   type TocItem,
 } from "@/components/markdown/MarkdownContent";
+import { useFloatingTip } from "@/components/feedback/FloatingTipProvider";
+import { ReportDialog } from "@/components/reports/ReportDialog";
 import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import {
@@ -16,6 +18,7 @@ import {
   listArticles,
   type ArticleSummary,
   type ArticleTag,
+  voteArticle,
 } from "@/lib/api/articles";
 import {
   addBookmark,
@@ -29,6 +32,8 @@ import { createArticleReport } from "@/lib/api/reports";
 import {
   followUser,
   getFollowState,
+  getPublicAuthorProfile,
+  type PublicAuthorProfile,
   unfollowUser,
   type FollowState,
 } from "@/lib/api/users";
@@ -43,29 +48,32 @@ type ArticlePreviewShowcaseProps = {
 };
 
 export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
+  const showTip = useFloatingTip();
   const articleId = Number(id);
   const [article, setArticle] = useState<ArticleSummary | null>(null);
   const [related, setRelated] = useState<ArticleSummary[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [authorProfile, setAuthorProfile] = useState<PublicAuthorProfile | null>(null);
   const [bookmarkState, setBookmarkState] = useState<BookmarkState | null>(null);
   const [bookmarkCollections, setBookmarkCollections] = useState<BookmarkCollection[]>([]);
   const [bookmarkCollectionId, setBookmarkCollectionId] = useState<number | "">("");
   const [bookmarkPickerOpen, setBookmarkPickerOpen] = useState(false);
   const [followState, setFollowState] = useState<FollowState | null>(null);
   const [bookmarking, setBookmarking] = useState(false);
+  const [voting, setVoting] = useState(false);
   const [following, setFollowing] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
+  const [reportError, setReportError] = useState("");
+  const [reporting, setReporting] = useState(false);
   const [reportSent, setReportSent] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const toc = useMemo(() => buildMarkdownToc(article?.contentMd ?? ""), [article?.contentMd]);
 
   const tags = article?.tags ?? [];
-  const commentCount = Math.max(0, article ? Math.round(article.viewCount / 28) : 0);
-  const likeCount = Math.max(12, article ? Math.round(article.viewCount / 12) : 0);
-
   useEffect(() => {
     if (!Number.isInteger(articleId) || articleId <= 0) {
       setError("文章不存在");
@@ -78,6 +86,7 @@ export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
     getArticle(articleId)
       .then((item) => {
         setArticle(item);
+        setCommentCount(item.commentCount);
         return Promise.all([
           getCurrentUser()
             .then(setCurrentUser)
@@ -119,6 +128,9 @@ export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
               }
               throw err;
             }),
+          getPublicAuthorProfile(item.authorUsername)
+            .then(setAuthorProfile)
+            .catch(() => setAuthorProfile(null)),
           listArticles({ moduleSlug: item.moduleSlug, sort: "hot", pageSize: 6 })
             .then((items) => setRelated(items.filter((relatedItem) => relatedItem.id !== item.id).slice(0, 5)))
             .catch(() => setRelated([])),
@@ -151,6 +163,7 @@ export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
     try {
       const next = await removeBookmark(article.id);
       setBookmarkState(next);
+      showTip("已取消收藏");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         window.location.href = "/login";
@@ -175,6 +188,7 @@ export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
       );
       setBookmarkState(next);
       setBookmarkPickerOpen(false);
+      showTip("收藏成功");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         window.location.href = "/login";
@@ -208,20 +222,74 @@ export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
     }
   }
 
-  async function handleReport() {
-    if (!article || !reportReason.trim()) {
+  async function handleArticleVote() {
+    if (!article || voting) {
       return;
     }
+    if (!currentUser) {
+      window.location.href = "/login";
+      return;
+    }
+    setVoting(true);
+    setError("");
+    const nextValue = article.myVote === 1 ? 0 : 1;
     try {
-      await createArticleReport(article.id, reportReason.trim());
-      setReportReason("");
-      setReportSent(true);
+      const next = await voteArticle(article.id, nextValue);
+      setArticle(next);
+      showTip(nextValue === 1 ? "点赞成功" : "已取消点赞");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         window.location.href = "/login";
         return;
       }
-      setError(err instanceof ApiError ? err.message : "举报失败，请稍后重试");
+      setError(err instanceof ApiError ? err.message : "点赞失败，请稍后重试");
+    } finally {
+      setVoting(false);
+    }
+  }
+
+  function openReportDialog() {
+    if (!article || reporting || reportSent) {
+      return;
+    }
+    if (!currentUser) {
+      window.location.href = "/login";
+      return;
+    }
+    setReportReason("");
+    setReportError("");
+    setReportOpen(true);
+  }
+
+  async function handleReport() {
+    if (!article || reporting || reportSent) {
+      return;
+    }
+    if (!currentUser) {
+      window.location.href = "/login";
+      return;
+    }
+    const reason = reportReason.trim();
+    if (!reason) {
+      setReportError("请填写举报原因");
+      return;
+    }
+    setReporting(true);
+    setReportError("");
+    try {
+      await createArticleReport(article.id, reason);
+      setReportReason("");
+      setReportSent(true);
+      setReportOpen(false);
+      showTip("举报已提交");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      setReportError(err instanceof ApiError ? err.message : "举报失败，请稍后重试");
+    } finally {
+      setReporting(false);
     }
   }
 
@@ -256,9 +324,11 @@ export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
               article={article}
               bookmarkState={bookmarkState}
               bookmarking={bookmarking}
+              voting={voting}
+              bookmarkCount={article.bookmarkCount}
               commentCount={commentCount}
-              likeCount={likeCount}
               onBookmarkToggle={handleBookmarkToggle}
+              onVote={handleArticleVote}
             />
 
             {bookmarkPickerOpen && (
@@ -279,30 +349,56 @@ export function ArticleDetailShowcase({ id }: ArticleDetailShowcaseProps) {
             </section>
 
             <ArticleActionBar
+              article={article}
               bookmarkState={bookmarkState}
               bookmarking={bookmarking}
+              voting={voting}
+              bookmarkCount={article.bookmarkCount}
               commentCount={commentCount}
-              likeCount={likeCount}
               onBookmarkToggle={handleBookmarkToggle}
-              onReportOpen={() => setReportOpen((open) => !open)}
+              onVote={handleArticleVote}
+              reporting={reporting}
+              reportSent={reportSent}
+              onReportOpen={openReportDialog}
             />
 
-            {reportOpen && (
-              <ReportBox
-                reason={reportReason}
-                sent={reportSent}
-                onChange={setReportReason}
-                onSubmit={handleReport}
-              />
-            )}
+            <ReportDialog
+              open={reportOpen}
+              title="举报文章"
+              description={`请说明举报《${article.title}》的原因。`}
+              reason={reportReason}
+              error={reportError}
+              submitting={reporting}
+              placeholder="请描述文章中的违规问题"
+              onChange={(value) => {
+                setReportReason(value);
+                if (reportError) {
+                  setReportError("");
+                }
+              }}
+              onCancel={() => {
+                if (reporting) {
+                  return;
+                }
+                setReportOpen(false);
+                setReportReason("");
+                setReportError("");
+              }}
+              onConfirm={handleReport}
+            />
 
-            <CommentSection articleId={article.id} initialCount={commentCount} />
+            <CommentSection
+              articleId={article.id}
+              initialCount={commentCount}
+              onCountChange={setCommentCount}
+            />
           </main>
 
           <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
             <TocPanel toc={toc} />
             <AuthorPanel
               article={article}
+              profile={authorProfile}
               currentUser={currentUser}
               followState={followState}
               following={following}
@@ -344,9 +440,11 @@ export function ArticlePreviewShowcase({ article, onClose }: ArticlePreviewShowc
             article={article}
             bookmarkState={null}
             bookmarking={false}
+            voting={false}
+            bookmarkCount={article.bookmarkCount}
             commentCount={0}
-            likeCount={0}
             onBookmarkToggle={() => undefined}
+            onVote={() => undefined}
             preview
           />
 
@@ -371,17 +469,21 @@ function ArticleHero({
   article,
   bookmarkState,
   bookmarking,
+  voting,
+  bookmarkCount,
   commentCount,
-  likeCount,
   onBookmarkToggle,
+  onVote,
   preview = false,
 }: {
   article: ArticleSummary;
   bookmarkState: BookmarkState | null;
   bookmarking: boolean;
+  voting: boolean;
+  bookmarkCount: number;
   commentCount: number;
-  likeCount: number;
   onBookmarkToggle: () => void;
+  onVote: () => void;
   preview?: boolean;
 }) {
   return (
@@ -405,12 +507,21 @@ function ArticleHero({
           <span>{formatDate(article.publishedAt ?? article.createdAt)}</span>
           <span>{formatCompact(article.viewCount)} 阅读</span>
           <span>{commentCount} 评论</span>
-          <span>{likeCount} 赞</span>
+          <span>{formatCompact(article.upVotes)} 赞</span>
+          <span>{formatCompact(bookmarkState?.bookmarkCount ?? article.bookmarkCount)} 收藏</span>
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
           <TagList tags={article.tags ?? []} moduleName={article.moduleName} />
           {!preview && <div className="flex gap-3 text-sm font-semibold">
+            <button
+              type="button"
+              disabled={voting}
+              onClick={onVote}
+              className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 py-2 text-[var(--color-muted)] hover:border-[var(--color-accent-strong)] hover:text-[var(--color-ink)] disabled:opacity-60"
+            >
+              {article.myVote === 1 ? "已点赞" : "点赞"}
+            </button>
             {bookmarkState ? (
               <button
                 type="button"
@@ -516,24 +627,39 @@ function SummaryBox({ summary }: { summary: string }) {
 }
 
 function ArticleActionBar({
+  article,
   bookmarkState,
   bookmarking,
+  voting,
+  bookmarkCount,
   commentCount,
-  likeCount,
   onBookmarkToggle,
+  onVote,
+  reporting,
+  reportSent,
   onReportOpen,
 }: {
+  article: ArticleSummary;
   bookmarkState: BookmarkState | null;
   bookmarking: boolean;
+  voting: boolean;
+  bookmarkCount: number;
   commentCount: number;
-  likeCount: number;
   onBookmarkToggle: () => void;
+  onVote: () => void;
+  reporting: boolean;
+  reportSent: boolean;
   onReportOpen: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] px-5 py-4 shadow-[var(--shadow-soft)] text-sm font-semibold text-[var(--color-muted)]">
-      <button type="button" className="rounded-md px-3 py-2 hover:bg-[var(--color-surface-solid)] hover:text-[var(--color-ink)]">
-        赞 {likeCount}
+      <button
+        type="button"
+        disabled={voting}
+        onClick={onVote}
+        className="rounded-md px-3 py-2 hover:bg-[var(--color-surface-solid)] hover:text-[var(--color-ink)] disabled:opacity-60"
+      >
+        {voting ? "提交中..." : article.myVote === 1 ? "已点赞" : "点赞"} {formatCompact(article.upVotes)}
       </button>
       <button
         type="button"
@@ -541,7 +667,7 @@ function ArticleActionBar({
         onClick={onBookmarkToggle}
         className="rounded-md px-3 py-2 hover:bg-[var(--color-surface-solid)] hover:text-[var(--color-ink)] disabled:opacity-60"
       >
-        收藏 {bookmarkState?.bookmarkCount ?? 0}
+        收藏 {bookmarkState?.bookmarkCount ?? bookmarkCount}
       </button>
       <button type="button" className="rounded-md px-3 py-2 hover:bg-[var(--color-surface-solid)] hover:text-[var(--color-ink)]">
         评论 {commentCount}
@@ -555,10 +681,11 @@ function ArticleActionBar({
       </button>
       <button
         type="button"
+        disabled={reporting || reportSent}
         onClick={onReportOpen}
-        className="ml-auto rounded-md px-3 py-2 hover:bg-[var(--color-surface-solid)] hover:text-[var(--color-ink)]"
+        className="ml-auto rounded-md px-3 py-2 hover:bg-[var(--color-surface-solid)] hover:text-[var(--color-ink)] disabled:opacity-60"
       >
-        更多
+        {reportSent ? "已举报" : reporting ? "提交中..." : "举报"}
       </button>
     </div>
   );
@@ -589,12 +716,14 @@ function TocPanel({ toc }: { toc: TocItem[] }) {
 
 function AuthorPanel({
   article,
+  profile,
   currentUser,
   followState,
   following,
   onFollowToggle,
 }: {
   article: ArticleSummary;
+  profile: PublicAuthorProfile | null;
   currentUser: CurrentUser | null;
   followState: FollowState | null;
   following: boolean;
@@ -635,9 +764,9 @@ function AuthorPanel({
         )
       )}
       <div className="mt-5 grid grid-cols-3 divide-x divide-[var(--color-line)] text-center text-xs text-[var(--color-muted)]">
-        <Stat label="文章" value={String(Math.max(1, article.revisionCount + 1))} />
-        <Stat label="阅读" value={formatCompact(article.viewCount)} />
-        <Stat label="收藏" value={String(Math.max(0, Math.round(article.viewCount / 18)))} />
+        <Stat label="文章" value={formatCompact(profile?.publishedArticleCount ?? 0)} />
+        <Stat label="粉丝" value={formatCompact(profile?.followersCount ?? followState?.followersCount ?? 0)} />
+        <Stat label="收藏" value={formatCompact(profile?.bookmarkCount ?? 0)} />
       </div>
     </SideCard>
   );
@@ -692,40 +821,6 @@ function InfoPanel({ article }: { article: ArticleSummary }) {
         <InfoRow label="来源" value={sourceTypeLabel(article.sourceType)} />
       </dl>
     </SideCard>
-  );
-}
-
-function ReportBox({
-  reason,
-  sent,
-  onChange,
-  onSubmit,
-}: {
-  reason: string;
-  sent: boolean;
-  onChange: (value: string) => void;
-  onSubmit: () => void;
-}) {
-  return (
-    <section className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
-      <p className="text-sm font-semibold">举报文章</p>
-      <textarea
-        value={reason}
-        onChange={(event) => onChange(event.target.value)}
-        rows={3}
-        maxLength={1000}
-        className="mt-3 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent-strong)]"
-        placeholder="请描述举报原因"
-      />
-      <button
-        type="button"
-        onClick={onSubmit}
-        className="mt-3 rounded-md bg-[var(--color-ink)] px-4 py-2 text-sm font-semibold text-[var(--color-page)]"
-      >
-        提交举报
-      </button>
-      {sent && <span className="ml-3 text-sm text-green-700">已提交</span>}
-    </section>
   );
 }
 

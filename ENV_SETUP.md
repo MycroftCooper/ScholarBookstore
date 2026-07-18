@@ -117,6 +117,14 @@ goose -dir services/api/migrations postgres "postgres://postgres:postgres123@loc
 
 当前仓库已经补齐目录、env 示例、初始 migration 和后端 Go API 骨架。
 
+推荐从仓库根目录一键启动：
+
+```powershell
+cmd /c ".\dev快捷入口.bat"
+```
+
+该入口会检查 PostgreSQL 连接，优先启动或创建 Docker 容器 `kb-postgres`，执行可用的数据库 migration，然后分别启动后端 API 与前端 Web。
+
 计划中的启动位置：
 
 ```text

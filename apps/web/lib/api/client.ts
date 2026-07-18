@@ -30,6 +30,22 @@ export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const body = await requestApiBody<T>(path, options);
+  return body.data;
+}
+
+export async function apiRequestWithMeta<T, M = Record<string, unknown>>(
+  path: string,
+  options: RequestInit = {},
+): Promise<{ data: T; meta: M }> {
+  const body = await requestApiBody<T, M>(path, options);
+  return { data: body.data, meta: body.meta };
+}
+
+async function requestApiBody<T, M = Record<string, unknown>>(
+  path: string,
+  options: RequestInit = {},
+): Promise<ApiSuccess<T> & { meta: M }> {
   const isFormData = options.body instanceof FormData;
   const headers = new Headers(options.headers);
   if (!isFormData && !headers.has("Content-Type")) {
@@ -53,5 +69,5 @@ export async function apiRequest<T>(
     );
   }
 
-  return (body as ApiSuccess<T>).data;
+  return body as ApiSuccess<T> & { meta: M };
 }

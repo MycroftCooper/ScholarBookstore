@@ -26,6 +26,7 @@ type Task struct {
 	ObjectTitle     *string
 	ObjectStatus    *string
 	ObjectContentMD *string
+	TargetUserID    *int64
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -54,6 +55,7 @@ type PublicTask struct {
 	ObjectTitle     *string    `json:"objectTitle,omitempty"`
 	ObjectStatus    *string    `json:"objectStatus,omitempty"`
 	ObjectContentMD *string    `json:"objectContentMd,omitempty"`
+	TargetUserID    *int64     `json:"targetUserId,omitempty"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
 }
@@ -153,6 +155,7 @@ func ToPublicTask(item Task, includeObjectContent bool) PublicTask {
 		ResolutionNote: item.ResolutionNote,
 		ObjectTitle:    item.ObjectTitle,
 		ObjectStatus:   item.ObjectStatus,
+		TargetUserID:   item.TargetUserID,
 		CreatedAt:      item.CreatedAt,
 		UpdatedAt:      item.UpdatedAt,
 	}

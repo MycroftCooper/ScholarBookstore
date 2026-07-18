@@ -1,3 +1,4 @@
+import { apiRequest } from "./client";
 import { listArticles } from "./articles";
 import { listModules } from "./modules";
 
@@ -5,7 +6,6 @@ export type HomeStats = {
   publishedArticles: number;
   activeModules: number;
   visibleComments: number;
-  activeUsers: number;
 };
 
 export type HomeArticleCard = {
@@ -51,13 +51,13 @@ export type HomeOverview = {
 };
 
 export async function getHomeOverview(): Promise<HomeOverview> {
-  const [latestArticles, hotArticles, modules] = await Promise.all([
+  const [stats, latestArticles, hotArticles, modules] = await Promise.all([
+    apiRequest<HomeStats>("/home/stats"),
     listArticles({ sort: "latest", pageSize: 8 }),
     listArticles({ sort: "hot", pageSize: 5 }),
     listModules(),
   ]);
 
-  const publishedArticles = latestArticles.length;
   const creatorStats = new Map<string, HomeCreator>();
 
   for (const article of latestArticles) {
@@ -68,16 +68,12 @@ export async function getHomeOverview(): Promise<HomeOverview> {
       commentCount: 0,
     };
     current.publishedCount += 1;
+    current.commentCount += article.commentCount;
     creatorStats.set(article.authorUsername, current);
   }
 
   return {
-    stats: {
-      publishedArticles,
-      activeModules: modules.filter((module) => module.isActive).length,
-      visibleComments: 0,
-      activeUsers: creatorStats.size,
-    },
+    stats,
     featured: latestArticles.map((article) => ({
       id: article.id,
       title: article.title,
@@ -85,7 +81,7 @@ export async function getHomeOverview(): Promise<HomeOverview> {
       moduleSlug: article.moduleSlug,
       moduleName: article.moduleName,
       authorUsername: article.authorUsername,
-      commentCount: 0,
+      commentCount: article.commentCount,
       publishedAt: article.publishedAt,
     })),
     modules: modules.map((module) => ({
@@ -99,7 +95,7 @@ export async function getHomeOverview(): Promise<HomeOverview> {
       articleId: article.id,
       articleTitle: article.title,
       moduleName: article.moduleName,
-      commentCount: 0,
+      commentCount: article.commentCount,
       lastActivityAt: article.updatedAt,
     })),
     creators: Array.from(creatorStats.values()).slice(0, 5),

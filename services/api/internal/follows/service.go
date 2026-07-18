@@ -3,6 +3,8 @@ package follows
 import (
 	"context"
 	"strings"
+
+	"scholarbookstore/services/api/internal/moderation"
 )
 
 type FollowRepository interface {
@@ -23,17 +25,33 @@ type FollowRepository interface {
 }
 
 type Service struct {
-	repo FollowRepository
+	repo      FollowRepository
+	penalties PenaltyChecker
 }
 
-func NewService(repo FollowRepository) *Service {
-	return &Service{repo: repo}
+type PenaltyChecker interface {
+	HasActivePenalty(ctx context.Context, userID int64, penaltyType string) (bool, error)
+}
+
+func NewService(repo FollowRepository, penaltyChecker ...PenaltyChecker) *Service {
+	var checker PenaltyChecker
+	if len(penaltyChecker) > 0 {
+		checker = penaltyChecker[0]
+	}
+	return &Service{repo: repo, penalties: checker}
 }
 
 func (s *Service) Follow(ctx context.Context, followerID int64, username string) (PublicState, error) {
 	username = strings.TrimSpace(username)
 	if followerID <= 0 || username == "" {
 		return PublicState{}, ErrInvalidInput
+	}
+	banned, err := s.hasPenalty(ctx, followerID, moderation.PenaltyFollowRestricted)
+	if err != nil {
+		return PublicState{}, err
+	}
+	if banned {
+		return PublicState{}, ErrForbidden
 	}
 	item, err := s.repo.Follow(ctx, followerID, username)
 	if err != nil {
@@ -133,6 +151,13 @@ func (s *Service) FollowModule(ctx context.Context, followerID int64, slug strin
 	if followerID <= 0 || slug == "" {
 		return PublicTargetState{}, ErrInvalidInput
 	}
+	banned, err := s.hasPenalty(ctx, followerID, moderation.PenaltyFollowRestricted)
+	if err != nil {
+		return PublicTargetState{}, err
+	}
+	if banned {
+		return PublicTargetState{}, ErrForbidden
+	}
 	item, err := s.repo.FollowModule(ctx, followerID, slug)
 	if err != nil {
 		return PublicTargetState{}, err
@@ -168,11 +193,25 @@ func (s *Service) FollowDomain(ctx context.Context, followerID int64, id int64) 
 	if followerID <= 0 || id <= 0 {
 		return PublicTargetState{}, ErrInvalidInput
 	}
+	banned, err := s.hasPenalty(ctx, followerID, moderation.PenaltyFollowRestricted)
+	if err != nil {
+		return PublicTargetState{}, err
+	}
+	if banned {
+		return PublicTargetState{}, ErrForbidden
+	}
 	item, err := s.repo.FollowDomain(ctx, followerID, id)
 	if err != nil {
 		return PublicTargetState{}, err
 	}
 	return ToPublicTargetState(item), nil
+}
+
+func (s *Service) hasPenalty(ctx context.Context, userID int64, penaltyType string) (bool, error) {
+	if s.penalties == nil {
+		return false, nil
+	}
+	return s.penalties.HasActivePenalty(ctx, userID, penaltyType)
 }
 
 func (s *Service) UnfollowDomain(ctx context.Context, followerID int64, id int64) (PublicTargetState, error) {

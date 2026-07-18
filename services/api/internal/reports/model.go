@@ -34,6 +34,25 @@ type UserReport struct {
 	UpdatedAt        time.Time
 }
 
+type CommentReport struct {
+	ID              int64
+	CommentID       int64
+	CommentContent  string
+	CommentAuthorID int64
+	ArticleID       int64
+	ArticleTitle    string
+	ReporterID      int64
+	ReporterName    string
+	Reason          string
+	Status          string
+	HandledBy       *int64
+	HandledByName   *string
+	HandledAt       *time.Time
+	HandleNote      string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type PublicReport struct {
 	ID            int64      `json:"id"`
 	ArticleID     int64      `json:"articleId"`
@@ -64,6 +83,25 @@ type PublicUserReport struct {
 	HandleNote       string     `json:"handleNote"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
+}
+
+type PublicCommentReport struct {
+	ID              int64      `json:"id"`
+	CommentID       int64      `json:"commentId"`
+	CommentContent  string     `json:"commentContent"`
+	CommentAuthorID int64      `json:"commentAuthorId"`
+	ArticleID       int64      `json:"articleId"`
+	ArticleTitle    string     `json:"articleTitle"`
+	ReporterID      int64      `json:"reporterId"`
+	ReporterName    string     `json:"reporterName"`
+	Reason          string     `json:"reason"`
+	Status          string     `json:"status"`
+	HandledBy       *int64     `json:"handledBy"`
+	HandledByName   *string    `json:"handledByName"`
+	HandledAt       *time.Time `json:"handledAt"`
+	HandleNote      string     `json:"handleNote"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
 type Page struct {
@@ -106,6 +144,27 @@ func ToPublicUserReport(item UserReport) PublicUserReport {
 		HandleNote:       item.HandleNote,
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
+	}
+}
+
+func ToPublicCommentReport(item CommentReport) PublicCommentReport {
+	return PublicCommentReport{
+		ID:              item.ID,
+		CommentID:       item.CommentID,
+		CommentContent:  item.CommentContent,
+		CommentAuthorID: item.CommentAuthorID,
+		ArticleID:       item.ArticleID,
+		ArticleTitle:    item.ArticleTitle,
+		ReporterID:      item.ReporterID,
+		ReporterName:    item.ReporterName,
+		Reason:          item.Reason,
+		Status:          item.Status,
+		HandledBy:       item.HandledBy,
+		HandledByName:   item.HandledByName,
+		HandledAt:       item.HandledAt,
+		HandleNote:      item.HandleNote,
+		CreatedAt:       item.CreatedAt,
+		UpdatedAt:       item.UpdatedAt,
 	}
 }
 

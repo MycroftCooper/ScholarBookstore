@@ -17,7 +17,6 @@ const emptyOverview: HomeOverviewData = {
     publishedArticles: 0,
     activeModules: 0,
     visibleComments: 0,
-    activeUsers: 0,
   },
   featured: [],
   modules: [],
@@ -140,14 +139,12 @@ function StatsGrid({
     () => [
       ["\u6587\u7ae0", overview.stats.publishedArticles],
       ["\u9886\u57df", overview.stats.activeModules],
-      ["\u8ba8\u8bba", overview.stats.visibleComments],
-      ["\u7528\u6237", overview.stats.activeUsers],
     ],
     [overview.stats],
   );
 
   return (
-    <div className="mt-9 grid max-w-2xl grid-cols-2 border border-[var(--color-line)] bg-[var(--color-surface)] backdrop-blur md:grid-cols-4">
+    <div className="mt-9 grid max-w-md grid-cols-2 border border-[var(--color-line)] bg-[var(--color-surface)] backdrop-blur">
       {stats.map(([label, value]) => (
         <div key={label} className="border-[var(--color-line)] px-5 py-4 md:border-r md:last:border-r-0">
           <div className="text-2xl font-semibold text-[var(--color-ink)]">

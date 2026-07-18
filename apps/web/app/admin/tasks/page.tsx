@@ -13,6 +13,7 @@ import {
   type AdminTask,
   type AdminTaskFilter,
   type AdminTaskStats,
+  type ModerationAction,
 } from "@/lib/api/adminTasks";
 import { ApiError } from "@/lib/api/client";
 import { listDomains, type DomainSummary } from "@/lib/api/domains";
@@ -22,6 +23,7 @@ const taskTypeLabel: Record<string, string> = {
   article_review: "文章审核",
   content_report: "举报处理",
   comment_report: "评论举报",
+  user_report: "用户举报",
   role_request: "角色申请",
 };
 
@@ -43,6 +45,7 @@ const priorityLabel: Record<number, string> = {
 };
 
 type ActionKind = "approve" | "reject" | "take-down" | "ignore";
+type ModerationActionType = ModerationAction["type"];
 
 export default function AdminTasksPage() {
   const [tasks, setTasks] = useState<AdminTask[]>([]);
@@ -53,6 +56,8 @@ export default function AdminTasksPage() {
   const [filter, setFilter] = useState<AdminTaskFilter>({ status: "pending" });
   const [activeTab, setActiveTab] = useState("");
   const [note, setNote] = useState("");
+  const [moderationActions, setModerationActions] = useState<ModerationActionType[]>([]);
+  const [actionDurations, setActionDurations] = useState<Record<string, string>>({});
   const [acting, setActing] = useState<ActionKind | "">("");
   const [error, setError] = useState("");
 
@@ -90,9 +95,21 @@ export default function AdminTasksPage() {
 
   const derived = useMemo(() => deriveTasks(tasks), [tasks]);
 
+  useEffect(() => {
+    if (!selected) {
+      setModerationActions([]);
+      setActionDurations({});
+      return;
+    }
+    setModerationActions(defaultModerationActions(selected));
+    setActionDurations({});
+  }, [selected?.id, selected?.taskType]);
+
   function updateFilter(next: AdminTaskFilter) {
     setFilter(next);
     setNote("");
+    setModerationActions([]);
+    setActionDurations({});
     load(next).catch(() => setError("待办加载失败"));
   }
 
@@ -129,7 +146,7 @@ export default function AdminTasksPage() {
           : kind === "reject"
             ? await rejectAdminTask(selected.id, trimmed)
             : kind === "take-down"
-              ? await takeDownAdminTask(selected.id, trimmed)
+              ? await takeDownAdminTask(selected.id, trimmed, buildModerationActions(selected, moderationActions, actionDurations))
               : await ignoreAdminTask(selected.id, trimmed);
       setSelected(updated);
       setNote("");
@@ -162,6 +179,7 @@ export default function AdminTasksPage() {
                   ["", "全部"],
                   ["article_review", "文章审核"],
                   ["content_report", "举报处理"],
+                  ["user_report", "用户举报"],
                   ["role_request", "角色申请"],
                 ].map(([key, label]) => (
                   <button
@@ -184,6 +202,7 @@ export default function AdminTasksPage() {
                   <option value="article_review">文章审核</option>
                   <option value="content_report">举报处理</option>
                   <option value="comment_report">评论举报</option>
+                  <option value="user_report">用户举报</option>
                 </FilterSelect>
                 <FilterSelect label="状态" value={filter.status ?? ""} onChange={(value) => updateFilter({ ...filter, status: value || undefined })}>
                   <option value="">全部</option>
@@ -269,7 +288,7 @@ export default function AdminTasksPage() {
                       >
                         <Td>
                           <span className="inline-flex items-center gap-2 font-semibold text-[#374151]">
-                            <span>{task.taskType === "article_review" ? "▤" : "⚐"}</span>
+                            <span>{task.taskType === "article_review" ? "▤" : task.taskType === "user_report" ? "人" : "⚐"}</span>
                             {taskTypeLabel[task.taskType] ?? task.taskType}
                           </span>
                         </Td>
@@ -311,7 +330,11 @@ export default function AdminTasksPage() {
               task={selected}
               note={note}
               acting={acting}
+              moderationActions={moderationActions}
+              actionDurations={actionDurations}
               onNoteChange={setNote}
+              onModerationActionsChange={setModerationActions}
+              onActionDurationChange={(type, value) => setActionDurations((current) => ({ ...current, [type]: value }))}
               onAction={handleAction}
             />
             <SideList
@@ -366,17 +389,77 @@ function FilterSelect({ label, value, onChange, children }: { label: string; val
   );
 }
 
+function ModerationActionPicker({
+  task,
+  selected,
+  durations,
+  onChange,
+  onDurationChange,
+}: {
+  task: AdminTask;
+  selected: ModerationActionType[];
+  durations: Record<string, string>;
+  onChange: (value: ModerationActionType[]) => void;
+  onDurationChange: (type: ModerationActionType, value: string) => void;
+}) {
+  const options = moderationOptions(task);
+  function toggle(type: ModerationActionType) {
+    onChange(selected.includes(type) ? selected.filter((item) => item !== type) : [...selected, type]);
+  }
+  return (
+    <section className="mt-4 rounded-xl border border-[#eef1f5] bg-[#fbfcfd] p-4">
+      <div className="mb-3 text-sm font-black text-[#111827]">处置动作</div>
+      <div className="grid gap-3">
+        {options.map((option) => (
+          <label key={option.type} className="grid gap-2 rounded-lg border border-[#e6e9ef] bg-white p-3 text-sm">
+            <span className="flex items-center gap-2 font-semibold text-[#374151]">
+              <input
+                type="checkbox"
+                checked={selected.includes(option.type)}
+                onChange={() => toggle(option.type)}
+              />
+              {option.label}
+            </span>
+            {option.duration && selected.includes(option.type) && (
+              <span className="flex items-center gap-2 text-xs text-[#667085]">
+                时长
+                <input
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={durations[option.type] ?? "7"}
+                  onChange={(event) => onDurationChange(option.type, event.target.value)}
+                  className="h-8 w-24 rounded-md border border-[#e6e9ef] px-2 outline-none focus:border-[#f8c400]"
+                />
+                天
+              </span>
+            )}
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function TaskDetailPanel({
   task,
   note,
   acting,
+  moderationActions,
+  actionDurations,
   onNoteChange,
+  onModerationActionsChange,
+  onActionDurationChange,
   onAction,
 }: {
   task: AdminTask | null;
   note: string;
   acting: string;
+  moderationActions: ModerationActionType[];
+  actionDurations: Record<string, string>;
   onNoteChange: (value: string) => void;
+  onModerationActionsChange: (value: ModerationActionType[]) => void;
+  onActionDurationChange: (type: ModerationActionType, value: string) => void;
   onAction: (kind: ActionKind) => void;
 }) {
   if (!task) {
@@ -432,6 +515,15 @@ function TaskDetailPanel({
               placeholder="驳回、下架或忽略时必须填写原因"
             />
           </label>
+          {isReportTask(task) && (
+            <ModerationActionPicker
+              task={task}
+              selected={moderationActions}
+              durations={actionDurations}
+              onChange={onModerationActionsChange}
+              onDurationChange={onActionDurationChange}
+            />
+          )}
           <div className="mt-4 grid grid-cols-4 gap-3">
             {task.taskType === "article_review" && (
               <>
@@ -442,7 +534,19 @@ function TaskDetailPanel({
             )}
             {task.taskType === "content_report" && (
               <>
-                <ActionButton disabled={acting === "take-down"} onClick={() => onAction("take-down")} primary>下架</ActionButton>
+                <ActionButton disabled={acting === "take-down"} onClick={() => onAction("take-down")} primary>处理</ActionButton>
+                <ActionButton disabled={acting === "ignore"} onClick={() => onAction("ignore")}>忽略</ActionButton>
+              </>
+            )}
+            {task.taskType === "comment_report" && (
+              <>
+                <ActionButton disabled={acting === "take-down"} onClick={() => onAction("take-down")} primary>处理</ActionButton>
+                <ActionButton disabled={acting === "ignore"} onClick={() => onAction("ignore")}>忽略</ActionButton>
+              </>
+            )}
+            {task.taskType === "user_report" && (
+              <>
+                <ActionButton disabled={acting === "take-down"} onClick={() => onAction("take-down")} primary>处理</ActionButton>
                 <ActionButton disabled={acting === "ignore"} onClick={() => onAction("ignore")}>忽略</ActionButton>
               </>
             )}
@@ -565,4 +669,50 @@ function deriveTasks(tasks: AdminTask[]) {
   });
   const unassigned = tasks.filter((task) => !task.assigneeId && (task.status === "pending" || task.status === "processing"));
   return { overdue, unassigned };
+}
+
+function isReportTask(task: AdminTask) {
+  return task.taskType === "content_report" || task.taskType === "comment_report" || task.taskType === "user_report";
+}
+
+function defaultModerationActions(task: AdminTask): ModerationActionType[] {
+  if (task.taskType === "content_report" || task.taskType === "comment_report") {
+    return ["hide_content"];
+  }
+  if (task.taskType === "user_report") {
+    return ["disable_account"];
+  }
+  return [];
+}
+
+function moderationOptions(task: AdminTask): Array<{ type: ModerationActionType; label: string; duration?: boolean }> {
+  const common: Array<{ type: ModerationActionType; label: string; duration?: boolean }> = [
+    { type: "disable_account", label: "禁用账号" },
+    { type: "restrict_follow", label: "限制关注", duration: true },
+    { type: "ban_article_create", label: "禁止发文章", duration: true },
+    { type: "ban_comment_create", label: "禁止发评论", duration: true },
+  ];
+  if (task.taskType === "content_report") {
+    return [{ type: "hide_content", label: "下架被举报文章" }, ...common];
+  }
+  if (task.taskType === "comment_report") {
+    return [{ type: "hide_content", label: "隐藏被举报评论" }, ...common];
+  }
+  if (task.taskType === "user_report") {
+    return common;
+  }
+  return [];
+}
+
+function buildModerationActions(task: AdminTask, selected: ModerationActionType[], durations: Record<string, string>): ModerationAction[] | undefined {
+  if (!isReportTask(task)) {
+    return undefined;
+  }
+  return selected.map((type) => {
+    if (type === "restrict_follow" || type === "ban_article_create" || type === "ban_comment_create") {
+      const parsed = Number.parseInt(durations[type] ?? "7", 10);
+      return { type, durationDays: Number.isFinite(parsed) && parsed > 0 ? parsed : 7 };
+    }
+    return { type };
+  });
 }

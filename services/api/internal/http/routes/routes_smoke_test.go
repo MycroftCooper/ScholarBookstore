@@ -48,7 +48,7 @@ func TestSmokePublishingSearchTagsReportsAndSocialFlow(t *testing.T) {
 	env := testutil.NewSmokeEnv(t)
 	env.SeedUser("admin", "admin@example.test", "admin", "active", "password123")
 	reviewerID := env.SeedUser("reviewer", "reviewer@example.test", "reviewer", "active", "password123")
-	env.SeedUser("author", "author@example.test", "user", "active", "password123")
+	authorID := env.SeedUser("author", "author@example.test", "user", "active", "password123")
 	env.SeedUser("reader", "reader@example.test", "user", "active", "password123")
 	domainID := env.SeedDomain("science", "Science")
 	moduleID := env.SeedModule(domainID, "physics", "Physics")
@@ -200,4 +200,28 @@ func TestSmokePublishingSearchTagsReportsAndSocialFlow(t *testing.T) {
 		t.Fatalf("article status after module delete = %q, want archived", got)
 	}
 	testutil.AssertErrorCode(t, env.Request(http.MethodGet, fmt.Sprintf("/api/v1/articles/%d", temporaryArticle.ID), nil), http.StatusNotFound, "NOT_FOUND")
+
+	userReport := env.Request(http.MethodPost, "/api/v1/users/author/reports", map[string]string{
+		"reason": "Profile is being used for a moderation smoke test.",
+	}, readerCookie)
+	testutil.AssertStatus(t, userReport, http.StatusCreated)
+	tasks := env.Request(http.MethodGet, "/api/v1/admin/tasks?taskType=user_report&status=pending", nil, adminCookie)
+	testutil.AssertStatus(t, tasks, http.StatusOK)
+	var userReportTasks []struct {
+		ID           int64  `json:"id"`
+		TaskType     string `json:"taskType"`
+		ObjectType   string `json:"objectType"`
+		ObjectTitle  string `json:"objectTitle"`
+		ObjectStatus string `json:"objectStatus"`
+	}
+	tasks.DecodeData(t, &userReportTasks)
+	if len(userReportTasks) != 1 || userReportTasks[0].TaskType != "user_report" || userReportTasks[0].ObjectTitle != "author" || userReportTasks[0].ObjectStatus != "pending" {
+		t.Fatalf("user report task was not listed correctly: %#v", userReportTasks)
+	}
+	testutil.AssertStatus(t, env.Request(http.MethodPost, fmt.Sprintf("/api/v1/admin/tasks/%d/take-down", userReportTasks[0].ID), map[string]string{
+		"note": "disable from smoke test",
+	}, adminCookie), http.StatusOK)
+	if got := env.UserStatus(authorID); got != "disabled" {
+		t.Fatalf("author status after user report resolution = %q, want disabled", got)
+	}
 }

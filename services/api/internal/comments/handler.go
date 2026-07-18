@@ -52,6 +52,10 @@ func (h *Handler) ListByArticle(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "文章不存在", nil)
 		return
 	}
+	if errors.Is(err, ErrForbidden) {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "当前用户已被限制发表评论", nil)
+		return
+	}
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
 		return
@@ -120,6 +124,10 @@ func (h *Handler) Vote(w http.ResponseWriter, r *http.Request) {
 	}
 	if errors.Is(err, ErrNotFound) {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "评论不存在", nil)
+		return
+	}
+	if errors.Is(err, ErrForbidden) {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "当前用户已被限制发表评论", nil)
 		return
 	}
 	if err != nil {

@@ -96,6 +96,42 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, report, nil)
 }
 
+func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	commentID, idOK := httprequest.IDParam(r, "id")
+	if !idOK {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "评论不存在", nil)
+		return
+	}
+	var req createReportRequest
+	if err := httprequest.DecodeJSON(r, &req); err != nil {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "请求参数不合法", nil)
+		return
+	}
+	report, err := h.service.CreateComment(r.Context(), commentID, user.ID, req.Reason)
+	if errors.Is(err, ErrInvalidInput) {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "举报原因不合法", nil)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "评论不存在", nil)
+		return
+	}
+	if errors.Is(err, ErrConflict) {
+		response.Error(w, http.StatusConflict, "CONFLICT", "你已举报过该评论", nil)
+		return
+	}
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+		return
+	}
+	response.JSON(w, http.StatusCreated, report, nil)
+}
+
 func (h *Handler) ListAdmin(w http.ResponseWriter, r *http.Request) {
 	page, pageSize, ok := httprequest.Pagination(r)
 	if !ok {

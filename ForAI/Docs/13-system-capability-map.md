@@ -25,7 +25,7 @@
 | 收藏 | 默认收藏夹、自定义收藏夹、收藏/取消、移动、删除转移 | `/api/v1/me/bookmark-collections`、`/api/v1/articles/{id}/bookmark`、`/api/v1/me/bookmarks` | `bookmark_collections`、`article_bookmarks` | user+ | `/me/bookmarks` | `[x] 已实现并有测试` | `[x] 已同步` |
 | 关注 | 关注/取关、关注列表、粉丝列表、作者页关注状态 | `/api/v1/users/{username}/follow`、`/api/v1/me/following`、`/api/v1/me/followers` | `user_follows` | user+ | `/me/following`、`/me/followers`、作者页 | `[x] 已实现并有测试` | `[x] 已同步` |
 | 通知 | 我的通知、未读数、单条已读、全部已读 | `/api/v1/me/notifications/*` | `notifications` | user+ | `/me/notifications` | `[x] 已实现并有测试` | `[x] 已同步` |
-| 举报 | 创建举报、后台列表、驳回、处理并下架 | `/api/v1/articles/{id}/reports`、`/api/v1/admin/reports/*` | `article_reports`、`articles` | user+/reviewer/admin | `/admin/tasks` | `[x] 已实现并有测试` | `[x] 已同步` |
+| 举报与处罚 | 文章/评论/用户主页举报、后台统一处理、单内容下架/隐藏、禁用账号、限制关注/发文/评论 | `/api/v1/articles/{id}/reports`、`/api/v1/comments/{id}/reports`、`/api/v1/users/{username}/reports`、`/api/v1/admin/tasks/*` | `article_reports`、`comment_reports`、`user_reports`、`moderation_penalties` | user+/reviewer/admin | `/admin/tasks` | `[x] 第一期已实现并有测试` | `[x] 已同步，详见 14-moderation-reports.md` |
 | Dashboard | 基础统计、30 天趋势 | `/api/v1/admin/dashboard` | 多表聚合 | reviewer/admin | `/admin/dashboard` | `[~] 已实现但测试不足` | `[x] 已同步` |
 | 错误日志 | 前端错误上报、服务端 panic 捕获、按堆栈指纹去重、后台查看、单条删除、清空全部 | `POST /api/v1/client-logs/errors`、`GET/DELETE /api/v1/admin/error-logs`、`DELETE /api/v1/admin/error-logs/{id}` | `error_logs` | 上报 public/user+；后台查看和清理 admin | `/admin/error-logs` | `[~] 已实现但测试不足` | `[x] 已同步` |
 | 上传 | 头像上传、文章图片上传、本地 uploads 存储 | `/api/v1/me/avatar`、`/api/v1/uploads/article-images` | `article_images` | user+ | 投稿页/资料页 | `[~] 已实现但测试不足` | `[x] 已同步` |

@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, apiRequestWithMeta } from "./client";
 
 export type CommentItem = {
   id: number;
@@ -20,6 +20,12 @@ export type CommentItem = {
   updatedAt: string;
 };
 
+export type CommentPageMeta = {
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
 export function listComments(
   articleId: number,
   sort: "latest" | "hot" = "latest",
@@ -30,7 +36,12 @@ export function listComments(
   params.set("sort", sort);
   params.set("page", String(page));
   params.set("pageSize", String(pageSize));
-  return apiRequest<CommentItem[]>(`/articles/${articleId}/comments?${params.toString()}`);
+  return apiRequestWithMeta<CommentItem[], CommentPageMeta>(
+    `/articles/${articleId}/comments?${params.toString()}`,
+  ).then((result) => ({
+    items: result.data,
+    meta: result.meta,
+  }));
 }
 
 export function createComment(articleId: number, content: string) {

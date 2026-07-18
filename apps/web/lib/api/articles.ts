@@ -18,6 +18,12 @@ export type ArticleSummary = {
   wordCount: number;
   readingMinutes: number;
   viewCount: number;
+  upVotes: number;
+  downVotes: number;
+  score: number;
+  myVote: -1 | 0 | 1;
+  bookmarkCount: number;
+  commentCount: number;
   revisionCount: number;
   isFeatured: boolean;
   tags: ArticleTag[] | null;
@@ -73,6 +79,13 @@ export async function listArticles(input: ArticleListParams = {}) {
 
 export function getArticle(id: number) {
   return apiRequest<ArticleSummary>(`/articles/${id}`);
+}
+
+export function voteArticle(id: number, value: -1 | 0 | 1) {
+  return apiRequest<ArticleSummary>(`/articles/${id}/vote`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
 }
 
 export function createArticle(input: {

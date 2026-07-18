@@ -29,6 +29,13 @@ func (r *fakeArticleRepo) FindPublishedByID(_ context.Context, id int64) (Articl
 	return Article{ID: id, Title: "published", ContentMD: "body", Status: "published", ViewCount: int64(r.views)}, nil
 }
 
+func (r *fakeArticleRepo) FindPublishedByIDForViewer(_ context.Context, id int64, viewerID int64) (Article, error) {
+	if id != 1 || viewerID <= 0 {
+		return Article{}, ErrNotFound
+	}
+	return Article{ID: id, Title: "published", ContentMD: "body", Status: "published", ViewCount: int64(r.views), MyVote: 1, UpVotes: 1}, nil
+}
+
 func (r *fakeArticleRepo) FindPreviewModule(_ context.Context, id int64) (PreviewModule, error) {
 	if id != 1 {
 		return PreviewModule{}, ErrNotFound
@@ -42,6 +49,20 @@ func (r *fakeArticleRepo) IncrementViewCount(_ context.Context, id int64) error 
 	}
 	r.views++
 	return nil
+}
+
+func (r *fakeArticleRepo) SetVote(_ context.Context, articleID int64, userID int64, value int) (Article, error) {
+	if articleID != 1 || userID <= 0 || value != 1 {
+		return Article{}, ErrNotFound
+	}
+	return Article{ID: articleID, Title: "published", Status: "published", MyVote: value, UpVotes: 1}, nil
+}
+
+func (r *fakeArticleRepo) ClearVote(_ context.Context, articleID int64, userID int64) (Article, error) {
+	if articleID != 1 || userID <= 0 {
+		return Article{}, ErrNotFound
+	}
+	return Article{ID: articleID, Title: "published", Status: "published", MyVote: 0, UpVotes: 0}, nil
 }
 
 func (r *fakeArticleRepo) ListMine(_ context.Context, _ int64, _ string, _ int, _ int) ([]Article, int64, error) {
@@ -350,5 +371,26 @@ func TestApprovePublishesArticle(t *testing.T) {
 	}
 	if article.Status != "published" {
 		t.Fatalf("unexpected status: %s", article.Status)
+	}
+}
+
+func TestVoteArticleSetsVote(t *testing.T) {
+	service := NewService(&fakeArticleRepo{})
+
+	article, err := service.Vote(context.Background(), 1, 2, 1)
+	if err != nil {
+		t.Fatalf("vote article: %v", err)
+	}
+	if article.MyVote != 1 || article.UpVotes != 1 || article.Score != 1 {
+		t.Fatalf("unexpected vote result: %#v", article)
+	}
+}
+
+func TestVoteArticleRejectsInvalidValue(t *testing.T) {
+	service := NewService(&fakeArticleRepo{})
+
+	_, err := service.Vote(context.Background(), 1, 2, 2)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }

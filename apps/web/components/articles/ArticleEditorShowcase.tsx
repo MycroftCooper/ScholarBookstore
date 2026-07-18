@@ -611,6 +611,12 @@ function buildLocalPreviewArticle(
     wordCount,
     readingMinutes: Math.max(1, Math.ceil(wordCount / 500)),
     viewCount: 0,
+    upVotes: 0,
+    downVotes: 0,
+    score: 0,
+    myVote: 0,
+    bookmarkCount: 0,
+    commentCount: 0,
     revisionCount: 0,
     isFeatured: false,
     tags: values.tags.map((tag) => ({

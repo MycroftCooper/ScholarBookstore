@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useFloatingTip } from "@/components/feedback/FloatingTipProvider";
+import { ReportDialog } from "@/components/reports/ReportDialog";
 import { UserAvatar } from "@/components/users/UserAvatar";
 import { getCurrentUser, type CurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
@@ -12,10 +14,12 @@ import {
   voteComment,
   type CommentItem,
 } from "@/lib/api/comments";
+import { createCommentReport } from "@/lib/api/reports";
 
 type CommentSectionProps = {
   articleId: number;
   initialCount?: number;
+  onCountChange?: (count: number) => void;
 };
 
 const pageSize = 10;
@@ -41,8 +45,14 @@ function hasComment(items: CommentItem[], commentId: number) {
   return items.some((item) => item.id === commentId);
 }
 
-export function CommentSection({ articleId, initialCount = 0 }: CommentSectionProps) {
+export function CommentSection({
+  articleId,
+  initialCount = 0,
+  onCountChange,
+}: CommentSectionProps) {
+  const showTip = useFloatingTip();
   const [comments, setComments] = useState<CommentItem[]>([]);
+  const [totalCount, setTotalCount] = useState(initialCount);
   const [content, setContent] = useState("");
   const [replyContent, setReplyContent] = useState<Record<number, string>>({});
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
@@ -55,15 +65,24 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
   const [loadingMore, setLoadingMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [reportTarget, setReportTarget] = useState<CommentItem | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [reportError, setReportError] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportedCommentIds, setReportedCommentIds] = useState<number[]>([]);
   const [targetCommentId, setTargetCommentId] = useState<number | null>(null);
   const [highlightedCommentId, setHighlightedCommentId] = useState<number | null>(null);
   const anchorSearchRef = useRef<number | null>(null);
 
   async function loadComments(nextPage = 1, append = false) {
     try {
-      const items = await listComments(articleId, sort, nextPage, pageSize);
+      const result = await listComments(articleId, sort, nextPage, pageSize);
+      const items = result.items;
+      const total = result.meta.total;
       setLoginRequired(false);
       setComments((current) => (append ? [...current, ...items] : items));
+      setTotalCount(total);
+      onCountChange?.(total);
       setPage(nextPage);
       setHasMore(items.filter((item) => item.parentId === null).length >= pageSize);
       return items;
@@ -147,11 +166,14 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
 
       try {
         while (!cancelled && more && !hasComment(currentItems, searchedCommentId)) {
-          const items = await listComments(articleId, sort, nextPage, pageSize);
+          const result = await listComments(articleId, sort, nextPage, pageSize);
+          const items = result.items;
           currentItems = [...currentItems, ...items];
           more = items.filter((item) => item.parentId === null).length >= pageSize;
 
           setComments(currentItems);
+          setTotalCount(result.meta.total);
+          onCountChange?.(result.meta.total);
           setPage(nextPage);
           setHasMore(more);
           nextPage += 1;
@@ -263,8 +285,41 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
       setComments((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
+      showTip(nextValue === 1 ? "点赞成功" : "已取消点赞");
     } catch {
       setError("点赞操作失败，请稍后重试");
+    }
+  }
+
+  async function handleReportConfirm() {
+    if (!reportTarget) {
+      return;
+    }
+    if (!currentUser) {
+      window.location.href = "/login";
+      return;
+    }
+    const reason = reportReason.trim();
+    if (!reason) {
+      setReportError("请填写举报原因");
+      return;
+    }
+    setReportSubmitting(true);
+    setReportError("");
+    try {
+      await createCommentReport(reportTarget.id, reason);
+      setReportedCommentIds((current) => [...current, reportTarget.id]);
+      setReportTarget(null);
+      setReportReason("");
+      showTip("举报已提交");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      setReportError(err instanceof ApiError ? err.message : "举报失败");
+    } finally {
+      setReportSubmitting(false);
     }
   }
 
@@ -296,7 +351,7 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold">评论</h2>
             <span className="rounded border border-[var(--color-accent)] px-2 py-0.5 text-xs font-semibold text-[var(--color-accent-strong)]">
-              {initialCount}
+              {totalCount}
             </span>
           </div>
         </div>
@@ -319,7 +374,7 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold">评论</h2>
           <span className="rounded border border-[var(--color-accent)] px-2 py-0.5 text-xs font-semibold text-[var(--color-accent-strong)]">
-            {Math.max(initialCount, topLevelComments.length)}
+            {totalCount}
           </span>
         </div>
         <div className="flex rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] p-1 text-xs font-semibold">
@@ -389,8 +444,19 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
               submitting={submitting}
               canDelete={Boolean(canDelete(comment))}
               canDeleteReply={(reply) => Boolean(canDelete(reply))}
+              currentUserId={currentUser?.id ?? null}
+              reportedCommentIds={reportedCommentIds}
               onVote={handleVote}
               onDelete={handleDelete}
+              onReport={(comment) => {
+                if (!currentUser) {
+                  window.location.href = "/login";
+                  return;
+                }
+                setReportTarget(comment);
+                setReportReason("");
+                setReportError("");
+              }}
               onReplyToggle={() =>
                 setReplyingTo((current) => (current === comment.id ? null : comment.id))
               }
@@ -414,6 +480,30 @@ export function CommentSection({ articleId, initialCount = 0 }: CommentSectionPr
           </button>
         )}
       </div>
+      <ReportDialog
+        open={Boolean(reportTarget)}
+        title="举报评论"
+        description="请说明举报该评论的原因。"
+        reason={reportReason}
+        error={reportError}
+        submitting={reportSubmitting}
+        placeholder="请描述该评论中的违规问题"
+        onChange={(value) => {
+          setReportReason(value);
+          if (reportError) {
+            setReportError("");
+          }
+        }}
+        onCancel={() => {
+          if (reportSubmitting) {
+            return;
+          }
+          setReportTarget(null);
+          setReportReason("");
+          setReportError("");
+        }}
+        onConfirm={handleReportConfirm}
+      />
     </section>
   );
 }
@@ -426,8 +516,11 @@ function CommentCard({
   submitting,
   canDelete,
   canDeleteReply,
+  currentUserId,
+  reportedCommentIds,
   onVote,
   onDelete,
+  onReport,
   onReplyToggle,
   onReplyChange,
   onReplySubmit,
@@ -440,8 +533,11 @@ function CommentCard({
   submitting: boolean;
   canDelete: boolean;
   canDeleteReply: (reply: CommentItem) => boolean;
+  currentUserId: number | null;
+  reportedCommentIds: number[];
   onVote: (comment: CommentItem, value: -1 | 1) => void;
   onDelete: (id: number) => void;
+  onReport: (comment: CommentItem) => void;
   onReplyToggle: () => void;
   onReplyChange: (value: string) => void;
   onReplySubmit: () => void;
@@ -480,6 +576,16 @@ function CommentCard({
               {canDelete && (
                 <button type="button" onClick={() => onDelete(comment.id)} className="text-red-600 hover:underline">
                   删除
+                </button>
+              )}
+              {currentUserId !== comment.authorId && (
+                <button
+                  type="button"
+                  disabled={reportedCommentIds.includes(comment.id)}
+                  onClick={() => onReport(comment)}
+                  className="hover:text-[var(--color-ink)] disabled:opacity-60"
+                >
+                  {reportedCommentIds.includes(comment.id) ? "已举报" : "举报"}
                 </button>
               )}
             </div>
@@ -530,6 +636,16 @@ function CommentCard({
                     {canDeleteReply(reply) && (
                       <button type="button" onClick={() => onDelete(reply.id)} className="text-red-600 hover:underline">
                         删除
+                      </button>
+                    )}
+                    {currentUserId !== reply.authorId && (
+                      <button
+                        type="button"
+                        disabled={reportedCommentIds.includes(reply.id)}
+                        onClick={() => onReport(reply)}
+                        className="hover:text-[var(--color-ink)] disabled:opacity-60"
+                      >
+                        {reportedCommentIds.includes(reply.id) ? "已举报" : "举报"}
                       </button>
                     )}
                   </div>

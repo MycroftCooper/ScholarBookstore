@@ -126,6 +126,10 @@ func (h *Handler) withUserTarget(w http.ResponseWriter, r *http.Request, action 
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "用户不存在", nil)
 		return
 	}
+	if errors.Is(err, ErrForbidden) {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "当前用户已被限制关注", nil)
+		return
+	}
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
 		return
@@ -165,6 +169,10 @@ func (h *Handler) writeTargetState(w http.ResponseWriter, result PublicTargetSta
 	}
 	if errors.Is(err, ErrNotFound) {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", notFoundMessage, nil)
+		return
+	}
+	if errors.Is(err, ErrForbidden) {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "当前用户已被限制关注", nil)
 		return
 	}
 	if err != nil {

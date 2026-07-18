@@ -93,7 +93,7 @@ func (r *Repository) ListPublished(ctx context.Context, filter PublishedArticleF
 	if err != nil {
 		return nil, 0, err
 	}
-	return r.withTags(ctx, items), total, nil
+	return r.withStats(ctx, r.withTags(ctx, items)), total, nil
 }
 
 func (r *Repository) ListAdmin(ctx context.Context, filter AdminArticleFilter, page int, pageSize int) ([]Article, int64, error) {
@@ -139,7 +139,7 @@ func (r *Repository) ListAdmin(ctx context.Context, filter AdminArticleFilter, p
 	if err != nil {
 		return nil, 0, err
 	}
-	return r.withTags(ctx, items), total, nil
+	return r.withStats(ctx, r.withTags(ctx, items)), total, nil
 }
 
 func (r *Repository) FindPublishedByID(ctx context.Context, id int64) (Article, error) {
@@ -161,7 +161,30 @@ func (r *Repository) FindPublishedByID(ctx context.Context, id int64) (Article, 
 	if err != nil {
 		return Article{}, err
 	}
-	return r.withTag(ctx, item), nil
+	return r.withStat(ctx, r.withTag(ctx, item)), nil
+}
+
+func (r *Repository) FindPublishedByIDForViewer(ctx context.Context, id int64, viewerID int64) (Article, error) {
+	const query = `
+		select
+			a.id, a.module_id, m.slug, m.name, a.author_id, u.username,
+			a.title, a.slug, a.summary, a.content_md, a.source_type, a.status, a.review_note,
+			a.published_at, a.revision_of_article_id, a.word_count, a.reading_minutes, a.view_count, a.revision_count, a.is_featured,
+			a.created_at, a.updated_at
+		from articles a
+		join modules m on m.id = a.module_id
+		join domains d on d.id = m.domain_id
+		join users u on u.id = a.author_id
+		where a.id = $1 and a.status = 'published' and a.deleted_at is null
+			and m.deleted_at is null and m.is_active = true
+			and d.deleted_at is null and d.is_active = true
+	`
+	item, err := r.scanOne(ctx, query, id)
+	if err != nil {
+		return Article{}, err
+	}
+	item = r.withStat(ctx, r.withTag(ctx, item))
+	return r.withViewerVote(ctx, item, viewerID), nil
 }
 
 func (r *Repository) FindPreviewModule(ctx context.Context, id int64) (PreviewModule, error) {
@@ -214,6 +237,50 @@ func (r *Repository) IncrementViewCount(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (r *Repository) SetVote(ctx context.Context, articleID int64, userID int64, value int) (Article, error) {
+	const query = `
+		insert into article_votes (article_id, user_id, value)
+		select $1, $2, $3
+		where exists (
+			select 1
+			from articles a
+			join modules m on m.id = a.module_id
+			join domains d on d.id = m.domain_id
+			where a.id = $1
+				and a.author_id <> $2
+				and a.status = 'published'
+				and a.deleted_at is null
+				and m.deleted_at is null
+				and m.is_active = true
+				and d.deleted_at is null
+				and d.is_active = true
+		)
+		on conflict (article_id, user_id)
+		do update set value = excluded.value, updated_at = now()
+		returning article_id
+	`
+	var votedArticleID int64
+	err := r.db.QueryRow(ctx, query, articleID, userID, value).Scan(&votedArticleID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Article{}, ErrNotFound
+	}
+	if err != nil {
+		return Article{}, fmt.Errorf("set article vote: %w", err)
+	}
+	return r.FindPublishedByIDForViewer(ctx, votedArticleID, userID)
+}
+
+func (r *Repository) ClearVote(ctx context.Context, articleID int64, userID int64) (Article, error) {
+	const query = `
+		delete from article_votes
+		where article_id = $1 and user_id = $2
+	`
+	if _, err := r.db.Exec(ctx, query, articleID, userID); err != nil {
+		return Article{}, fmt.Errorf("clear article vote: %w", err)
+	}
+	return r.FindPublishedByIDForViewer(ctx, articleID, userID)
+}
+
 func (r *Repository) ListMine(ctx context.Context, authorID int64, status string, page int, pageSize int) ([]Article, int64, error) {
 	args := []interface{}{authorID}
 	filter := "a.author_id = $1 and a.deleted_at is null"
@@ -252,7 +319,7 @@ func (r *Repository) ListMine(ctx context.Context, authorID int64, status string
 	if err != nil {
 		return nil, 0, err
 	}
-	return r.withTags(ctx, items), total, nil
+	return r.withStats(ctx, r.withTags(ctx, items)), total, nil
 }
 
 func (r *Repository) Create(ctx context.Context, input CreateArticleInput) (Article, error) {
@@ -372,7 +439,7 @@ func (r *Repository) FindByIDForAuthor(ctx context.Context, id int64, authorID i
 	if err != nil {
 		return Article{}, err
 	}
-	return r.withTag(ctx, item), nil
+	return r.withStat(ctx, r.withTag(ctx, item)), nil
 }
 
 func (r *Repository) UpdateOwn(ctx context.Context, id int64, authorID int64, input UpdateArticleInput) (Article, error) {
@@ -479,7 +546,7 @@ func (r *Repository) ListPendingReview(ctx context.Context, filter AdminArticleF
 	if err != nil {
 		return nil, 0, err
 	}
-	return r.withTags(ctx, items), total, nil
+	return r.withStats(ctx, r.withTags(ctx, items)), total, nil
 }
 
 func (r *Repository) CanModerateArticle(ctx context.Context, actorID int64, actorRole string, articleID int64) (bool, error) {
@@ -778,7 +845,11 @@ func (r *Repository) findByID(ctx context.Context, id int64) (Article, error) {
 		join users u on u.id = a.author_id
 		where a.id = $1 and a.deleted_at is null
 	`
-	return r.scanOne(ctx, query, id)
+	item, err := r.scanOne(ctx, query, id)
+	if err != nil {
+		return Article{}, err
+	}
+	return r.withStat(ctx, item), nil
 }
 
 func (r *Repository) updateStatus(ctx context.Context, query string, id int64) (Article, error) {
@@ -802,7 +873,11 @@ func (r *Repository) updateStatus(ctx context.Context, query string, id int64) (
 		join users u on u.id = a.author_id
 		where a.id = $1 and a.deleted_at is null
 	`
-	return r.scanOne(ctx, findQuery, updatedID)
+	item, err := r.scanOne(ctx, findQuery, updatedID)
+	if err != nil {
+		return Article{}, err
+	}
+	return r.withStat(ctx, item), nil
 }
 
 func (r *Repository) review(ctx context.Context, query string, id int64, input ReviewArticleInput) (Article, error) {
@@ -826,7 +901,11 @@ func (r *Repository) review(ctx context.Context, query string, id int64, input R
 		join users u on u.id = a.author_id
 		where a.id = $1 and a.deleted_at is null
 	`
-	return r.scanOne(ctx, findQuery, reviewedID)
+	item, err := r.scanOne(ctx, findQuery, reviewedID)
+	if err != nil {
+		return Article{}, err
+	}
+	return r.withStat(ctx, item), nil
 }
 
 func (r *Repository) SetArticleTags(ctx context.Context, articleID int64, names []string) error {
@@ -949,6 +1028,100 @@ func (r *Repository) withTags(ctx context.Context, items []Article) []Article {
 		items[i].Tags = tags[items[i].ID]
 	}
 	return items
+}
+
+func (r *Repository) withStat(ctx context.Context, item Article) Article {
+	stats := r.loadStats(ctx, []int64{item.ID})
+	if stat, ok := stats[item.ID]; ok {
+		item.BookmarkCount = stat.bookmarkCount
+		item.CommentCount = stat.commentCount
+		item.UpVotes = stat.upVotes
+		item.DownVotes = stat.downVotes
+	}
+	return item
+}
+
+func (r *Repository) withStats(ctx context.Context, items []Article) []Article {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	stats := r.loadStats(ctx, ids)
+	for i := range items {
+		if stat, ok := stats[items[i].ID]; ok {
+			items[i].BookmarkCount = stat.bookmarkCount
+			items[i].CommentCount = stat.commentCount
+			items[i].UpVotes = stat.upVotes
+			items[i].DownVotes = stat.downVotes
+		}
+	}
+	return items
+}
+
+type articleStats struct {
+	bookmarkCount int64
+	commentCount  int64
+	upVotes       int64
+	downVotes     int64
+}
+
+func (r *Repository) loadStats(ctx context.Context, articleIDs []int64) map[int64]articleStats {
+	out := map[int64]articleStats{}
+	if len(articleIDs) == 0 {
+		return out
+	}
+	rows, err := r.db.Query(ctx, `
+		select
+			a.id,
+			(select count(*) from article_bookmarks b where b.article_id = a.id and b.deleted_at is null) as bookmark_count,
+			(
+				select count(*)
+				from comments c
+				where c.article_id = a.id
+					and c.parent_id is null
+					and (
+						c.deleted_at is null
+						or exists (
+							select 1
+							from comments child
+							where child.parent_id = c.id
+								and child.visibility = 'visible'
+								and child.deleted_at is null
+						)
+					)
+			) as comment_count,
+			(select count(*) from article_votes av where av.article_id = a.id and av.value = 1) as up_votes,
+			(select count(*) from article_votes av where av.article_id = a.id and av.value = -1) as down_votes
+		from articles a
+		where a.id = any($1)
+	`, articleIDs)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var articleID int64
+		var stat articleStats
+		if err := rows.Scan(&articleID, &stat.bookmarkCount, &stat.commentCount, &stat.upVotes, &stat.downVotes); err != nil {
+			continue
+		}
+		out[articleID] = stat
+	}
+	return out
+}
+
+func (r *Repository) withViewerVote(ctx context.Context, item Article, viewerID int64) Article {
+	if viewerID <= 0 {
+		return item
+	}
+	const query = `
+		select coalesce((select value from article_votes where article_id = $1 and user_id = $2), 0)
+	`
+	if err := r.db.QueryRow(ctx, query, item.ID, viewerID).Scan(&item.MyVote); err != nil {
+		item.MyVote = 0
+	}
+	return item
 }
 
 func (r *Repository) loadTags(ctx context.Context, articleIDs []int64) map[int64][]Tag {

@@ -66,7 +66,17 @@ docker stop kb-postgres
 docker exec -it kb-postgres psql -U postgres -d kb_dev
 ```
 
-## 4. 当前验证结果
+## 4. 一键启动入口
+
+从仓库根目录启动本地开发环境：
+
+```powershell
+cmd /c ".\dev快捷入口.bat"
+```
+
+该入口会检查 PostgreSQL，优先启动或创建 Docker 容器 `kb-postgres`，再启动后端 API 和前端 Web。
+
+## 5. 当前验证结果
 
 已验证容器 `kb-postgres` 正在运行，主机端口 `localhost:5432` 连通，数据库 `kb_dev` 可通过用户 `postgres` 正常连接。
 
@@ -76,7 +86,7 @@ docker exec -it kb-postgres psql -U postgres -d kb_dev
 PostgreSQL 17.10
 ```
 
-## 5. 项目环境变量
+## 6. 项目环境变量
 
 后端本地示例配置见：
 

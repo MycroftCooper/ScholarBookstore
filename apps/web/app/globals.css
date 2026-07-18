@@ -153,8 +153,37 @@ a {
   }
 }
 
+@keyframes floating-tip-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -42%) scale(0.98);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-50%, -64%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -86%) scale(0.98);
+  }
+}
+
+.floating-tip {
+  animation-name: floating-tip-rise;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .contour-cluster {
     animation: none;
+  }
+
+  .floating-tip {
+    animation-name: none;
   }
 }

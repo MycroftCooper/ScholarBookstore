@@ -21,6 +21,11 @@ type Article struct {
 	WordCount      int
 	ReadingMinutes int
 	ViewCount      int64
+	UpVotes        int64
+	DownVotes      int64
+	MyVote         int
+	BookmarkCount  int64
+	CommentCount   int64
 	RevisionCount  int
 	IsFeatured     bool
 	Tags           []Tag
@@ -46,6 +51,12 @@ type PublicArticle struct {
 	WordCount      int        `json:"wordCount"`
 	ReadingMinutes int        `json:"readingMinutes"`
 	ViewCount      int64      `json:"viewCount"`
+	UpVotes        int64      `json:"upVotes"`
+	DownVotes      int64      `json:"downVotes"`
+	Score          int64      `json:"score"`
+	MyVote         int        `json:"myVote"`
+	BookmarkCount  int64      `json:"bookmarkCount"`
+	CommentCount   int64      `json:"commentCount"`
 	RevisionCount  int        `json:"revisionCount"`
 	IsFeatured     bool       `json:"isFeatured"`
 	Tags           []Tag      `json:"tags"`
@@ -150,6 +161,12 @@ func ToPublic(article Article, includeContent bool) PublicArticle {
 		WordCount:      article.WordCount,
 		ReadingMinutes: article.ReadingMinutes,
 		ViewCount:      article.ViewCount,
+		UpVotes:        article.UpVotes,
+		DownVotes:      article.DownVotes,
+		Score:          article.UpVotes - article.DownVotes,
+		MyVote:         article.MyVote,
+		BookmarkCount:  article.BookmarkCount,
+		CommentCount:   article.CommentCount,
 		RevisionCount:  article.RevisionCount,
 		IsFeatured:     article.IsFeatured,
 		Tags:           publicTagsOrEmpty(article.Tags),

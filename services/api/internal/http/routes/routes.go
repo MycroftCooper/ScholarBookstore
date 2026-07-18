@@ -23,6 +23,7 @@ import (
 	"scholarbookstore/services/api/internal/follows"
 	authmiddleware "scholarbookstore/services/api/internal/http/middleware"
 	"scholarbookstore/services/api/internal/http/response"
+	"scholarbookstore/services/api/internal/moderation"
 	"scholarbookstore/services/api/internal/modules"
 	"scholarbookstore/services/api/internal/notifications"
 	"scholarbookstore/services/api/internal/observability"
@@ -66,8 +67,10 @@ func New(deps Dependencies) http.Handler {
 	moduleRepo := modules.NewRepository(deps.DB)
 	moduleService := modules.NewService(moduleRepo)
 	moduleHandler := modules.NewHandler(moduleService)
+	moderationRepo := moderation.NewRepository(deps.DB)
+	moderationService := moderation.NewService(moderationRepo)
 	articleRepo := articles.NewRepository(deps.DB)
-	articleService := articles.NewService(articleRepo)
+	articleService := articles.NewService(articleRepo, moderationService)
 	articleHandler := articles.NewHandler(articleService)
 	notificationRepo := notifications.NewRepository(deps.DB)
 	notificationService := notifications.NewService(notificationRepo)
@@ -76,13 +79,13 @@ func New(deps Dependencies) http.Handler {
 	bookmarkService := bookmarks.NewService(bookmarkRepo, notificationRepo)
 	bookmarkHandler := bookmarks.NewHandler(bookmarkService)
 	followRepo := follows.NewRepository(deps.DB)
-	followService := follows.NewService(followRepo)
+	followService := follows.NewService(followRepo, moderationService)
 	followHandler := follows.NewHandler(followService)
 	reportRepo := reports.NewRepository(deps.DB)
 	reportService := reports.NewService(reportRepo)
 	reportHandler := reports.NewHandler(reportService)
 	commentRepo := comments.NewRepository(deps.DB)
-	commentService := comments.NewService(commentRepo, notificationRepo)
+	commentService := comments.NewService(commentRepo, notificationRepo, moderationService)
 	commentHandler := comments.NewHandler(commentService)
 	uploadRepo := apiuploads.NewRepository(deps.DB)
 	uploadService := apiuploads.NewService(deps.Config, uploadRepo)
@@ -95,7 +98,7 @@ func New(deps Dependencies) http.Handler {
 	dashboardHandler := dashboard.NewHandler(dashboardService)
 	adminRepo := admin.NewRepository(deps.DB)
 	adminService := admin.NewService(adminRepo)
-	adminHandler := admin.NewHandler(adminService, articleService, reportService)
+	adminHandler := admin.NewHandler(adminService, articleService, reportService, moderationService)
 	errorLogHandler := observability.NewHandler(errorLogService)
 	audit := func(action string, targetType string, targetParam string, detail map[string]string, next http.HandlerFunc) http.HandlerFunc {
 		return audited(adminService, action, targetType, targetParam, detail, next)
@@ -122,7 +125,8 @@ func New(deps Dependencies) http.Handler {
 		r.Get("/domains/{id}", domainHandler.Detail)
 		r.Get("/modules/{slug}", moduleHandler.Detail)
 		r.Get("/articles", articleHandler.ListPublished)
-		r.Get("/articles/{id}", articleHandler.DetailPublished)
+		r.With(authmiddleware.OptionalAuth(deps.Config, authService)).Get("/articles/{id}", articleHandler.DetailPublished)
+		r.Get("/home/stats", handleHomeStats(deps.DB))
 		r.Get("/tags", tagHandler.List)
 		r.Get("/users/{username}", userHandler.PublicAuthorProfile)
 		r.With(authmiddleware.OptionalAuth(deps.Config, authService)).Post("/client-logs/errors", errorLogHandler.CreateClientErrorLog)
@@ -139,6 +143,7 @@ func New(deps Dependencies) http.Handler {
 			r.Post("/articles/{id}/comments", commentHandler.CreateTopLevel)
 			r.Post("/articles/{id}/bookmark", bookmarkHandler.Add)
 			r.Post("/articles/{id}/reports", reportHandler.Create)
+			r.Put("/articles/{id}/vote", articleHandler.Vote)
 			r.Delete("/articles/{id}/bookmark", bookmarkHandler.Remove)
 			r.Get("/modules/{slug}/follow", followHandler.ModuleState)
 			r.Post("/modules/{slug}/follow", followHandler.FollowModule)
@@ -147,6 +152,7 @@ func New(deps Dependencies) http.Handler {
 			r.Post("/domains/{id}/follow", followHandler.FollowDomain)
 			r.Delete("/domains/{id}/follow", followHandler.UnfollowDomain)
 			r.Post("/comments/{id}/replies", commentHandler.Reply)
+			r.Post("/comments/{id}/reports", reportHandler.CreateComment)
 			r.Put("/comments/{id}/vote", commentHandler.Vote)
 			r.Delete("/comments/{id}", audit("comment_deleted", "comment", "id", nil, commentHandler.Delete))
 			r.Get("/me/articles", articleHandler.ListMine)
@@ -283,6 +289,65 @@ func audited(adminService *admin.Service, action string, targetType string, targ
 			IP:         r.RemoteAddr,
 			UserAgent:  r.UserAgent(),
 		})
+	}
+}
+
+func handleHomeStats(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		const query = `
+			select
+				(
+					select count(*)
+					from articles a
+					join modules m on m.id = a.module_id
+					join domains d on d.id = m.domain_id
+					where a.status = 'published'
+						and a.deleted_at is null
+						and m.deleted_at is null
+						and m.is_active = true
+						and d.deleted_at is null
+						and d.is_active = true
+				) as published_articles,
+				(
+					select count(*)
+					from modules m
+					join domains d on d.id = m.domain_id
+					where m.deleted_at is null
+						and m.is_active = true
+						and d.deleted_at is null
+						and d.is_active = true
+				) as active_modules,
+				(
+					select count(*)
+					from comments c
+					join articles a on a.id = c.article_id
+					join modules m on m.id = a.module_id
+					join domains d on d.id = m.domain_id
+					where c.visibility = 'visible'
+						and c.deleted_at is null
+						and a.status = 'published'
+						and a.deleted_at is null
+						and m.deleted_at is null
+						and m.is_active = true
+						and d.deleted_at is null
+						and d.is_active = true
+				) as visible_comments
+		`
+
+		var stats struct {
+			PublishedArticles int64 `json:"publishedArticles"`
+			ActiveModules     int64 `json:"activeModules"`
+			VisibleComments   int64 `json:"visibleComments"`
+		}
+		if err := pool.QueryRow(ctx, query).Scan(&stats.PublishedArticles, &stats.ActiveModules, &stats.VisibleComments); err != nil {
+			response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, stats, nil)
 	}
 }
 

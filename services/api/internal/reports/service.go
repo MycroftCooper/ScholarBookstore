@@ -8,8 +8,11 @@ import (
 type ReportRepository interface {
 	Create(ctx context.Context, articleID int64, reporterID int64, reason string) (Report, error)
 	CreateUser(ctx context.Context, username string, reporterID int64, reason string) (UserReport, error)
+	CreateComment(ctx context.Context, commentID int64, reporterID int64, reason string) (CommentReport, error)
 	ListAdmin(ctx context.Context, status string, page int, pageSize int) ([]Report, int64, error)
 	Resolve(ctx context.Context, id int64, reviewerID int64, status string, note string, archiveArticle bool) (Report, error)
+	ResolveUser(ctx context.Context, id int64, reviewerID int64, status string, note string, disableUser bool) (UserReport, error)
+	ResolveComment(ctx context.Context, id int64, reviewerID int64, status string, note string, hideComment bool) (CommentReport, error)
 }
 
 type Service struct {
@@ -45,6 +48,18 @@ func (s *Service) CreateUser(ctx context.Context, username string, reporterID in
 	return ToPublicUserReport(item), nil
 }
 
+func (s *Service) CreateComment(ctx context.Context, commentID int64, reporterID int64, reason string) (PublicCommentReport, error) {
+	reason = strings.TrimSpace(reason)
+	if commentID <= 0 || reporterID <= 0 || reason == "" || len([]rune(reason)) > 1000 {
+		return PublicCommentReport{}, ErrInvalidInput
+	}
+	item, err := s.repo.CreateComment(ctx, commentID, reporterID, reason)
+	if err != nil {
+		return PublicCommentReport{}, err
+	}
+	return ToPublicCommentReport(item), nil
+}
+
 func (s *Service) ListAdmin(ctx context.Context, status string, page int, pageSize int) (Page, error) {
 	status = strings.TrimSpace(status)
 	if status != "" && status != "pending" && status != "resolved" && status != "rejected" {
@@ -72,6 +87,38 @@ func (s *Service) Resolve(ctx context.Context, id int64, reviewerID int64, statu
 		return PublicReport{}, err
 	}
 	return ToPublic(item), nil
+}
+
+func (s *Service) ResolveUser(ctx context.Context, id int64, reviewerID int64, status string, note string, disableUser bool) (PublicUserReport, error) {
+	status = strings.TrimSpace(status)
+	note = strings.TrimSpace(note)
+	if id <= 0 || reviewerID <= 0 || (status != "resolved" && status != "rejected") {
+		return PublicUserReport{}, ErrInvalidInput
+	}
+	if status == "rejected" && disableUser {
+		return PublicUserReport{}, ErrInvalidInput
+	}
+	item, err := s.repo.ResolveUser(ctx, id, reviewerID, status, note, disableUser)
+	if err != nil {
+		return PublicUserReport{}, err
+	}
+	return ToPublicUserReport(item), nil
+}
+
+func (s *Service) ResolveComment(ctx context.Context, id int64, reviewerID int64, status string, note string, hideComment bool) (PublicCommentReport, error) {
+	status = strings.TrimSpace(status)
+	note = strings.TrimSpace(note)
+	if id <= 0 || reviewerID <= 0 || (status != "resolved" && status != "rejected") {
+		return PublicCommentReport{}, ErrInvalidInput
+	}
+	if status == "rejected" && hideComment {
+		return PublicCommentReport{}, ErrInvalidInput
+	}
+	item, err := s.repo.ResolveComment(ctx, id, reviewerID, status, note, hideComment)
+	if err != nil {
+		return PublicCommentReport{}, err
+	}
+	return ToPublicCommentReport(item), nil
 }
 
 func normalizePage(page int, pageSize int) (int, int) {

@@ -2,7 +2,7 @@ import { apiRequest } from "./client";
 
 export type AdminTask = {
   id: number;
-  taskType: "article_review" | "content_report" | "comment_report" | string;
+  taskType: "article_review" | "content_report" | "comment_report" | "user_report" | string;
   objectType: string;
   objectId: number;
   domainId: number | null;
@@ -24,8 +24,14 @@ export type AdminTask = {
   objectTitle?: string;
   objectStatus?: string;
   objectContentMd?: string;
+  targetUserId?: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ModerationAction = {
+  type: "hide_content" | "disable_account" | "restrict_follow" | "ban_article_create" | "ban_comment_create";
+  durationDays?: number;
 };
 
 export type AdminTaskStats = {
@@ -97,10 +103,10 @@ export function rejectAdminTask(id: number, note: string) {
   });
 }
 
-export function takeDownAdminTask(id: number, note: string) {
+export function takeDownAdminTask(id: number, note: string, actions?: ModerationAction[]) {
   return apiRequest<AdminTask>(`/admin/tasks/${id}/take-down`, {
     method: "POST",
-    body: JSON.stringify({ note }),
+    body: JSON.stringify({ note, actions }),
   });
 }
 

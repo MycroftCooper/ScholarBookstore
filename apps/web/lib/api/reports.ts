@@ -45,3 +45,29 @@ export function createUserReport(username: string, reason: string) {
     body: JSON.stringify({ reason }),
   });
 }
+
+export type CommentReport = {
+  id: number;
+  commentId: number;
+  commentContent: string;
+  commentAuthorId: number;
+  articleId: number;
+  articleTitle: string;
+  reporterId: number;
+  reporterName: string;
+  reason: string;
+  status: "pending" | "resolved" | "rejected";
+  handledBy: number | null;
+  handledByName: string | null;
+  handledAt: string | null;
+  handleNote: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function createCommentReport(commentId: number, reason: string) {
+  return apiRequest<CommentReport>(`/comments/${commentId}/reports`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}

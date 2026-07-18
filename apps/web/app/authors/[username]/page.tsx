@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { useFloatingTip } from "@/components/feedback/FloatingTipProvider";
 import { SiteFrame } from "@/components/layout/SiteFrame";
+import { ReportDialog } from "@/components/reports/ReportDialog";
 import { UserAvatar } from "@/components/users/UserAvatar";
 import { ApiError } from "@/lib/api/client";
 import { createUserReport } from "@/lib/api/reports";
@@ -20,6 +22,7 @@ import {
 type SortMode = "latest" | "hot" | "bookmarks";
 
 export default function AuthorProfilePage() {
+  const showTip = useFloatingTip();
   const params = useParams<{ username: string }>();
   const username = params?.username ? decodeURIComponent(params.username) : "";
   const [profile, setProfile] = useState<PublicAuthorProfile | null>(null);
@@ -29,6 +32,9 @@ export default function AuthorProfilePage() {
   const [busy, setBusy] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [reportSent, setReportSent] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportError, setReportError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -108,6 +114,19 @@ export default function AuthorProfilePage() {
     }
   }
 
+  function openReportDialog() {
+    if (!profile || reporting || reportSent) {
+      return;
+    }
+    if (!followState) {
+      window.location.href = "/login";
+      return;
+    }
+    setReportReason("");
+    setReportError("");
+    setReportOpen(true);
+  }
+
   async function reportUser() {
     if (!profile || reporting || reportSent) {
       return;
@@ -116,16 +135,25 @@ export default function AuthorProfilePage() {
       window.location.href = "/login";
       return;
     }
+    const reason = reportReason.trim();
+    if (!reason) {
+      setReportError("请填写举报原因");
+      return;
+    }
     setReporting(true);
+    setReportError("");
     try {
-      await createUserReport(profile.username, "用户主页存在违规内容");
+      await createUserReport(profile.username, reason);
       setReportSent(true);
+      setReportOpen(false);
+      setReportReason("");
+      showTip("举报已提交");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         window.location.href = "/login";
         return;
       }
-      setError(err instanceof ApiError ? err.message : "举报失败");
+      setReportError(err instanceof ApiError ? err.message : "举报失败");
     } finally {
       setReporting(false);
     }
@@ -147,7 +175,7 @@ export default function AuthorProfilePage() {
                 reporting={reporting}
                 reportSent={reportSent}
                 onFollow={toggleFollow}
-                onReport={reportUser}
+                onReport={openReportDialog}
               />
             </aside>
 
@@ -192,6 +220,32 @@ export default function AuthorProfilePage() {
           </div>
         )}
       </section>
+      {profile && (
+        <ReportDialog
+          open={reportOpen}
+          title="举报用户"
+          description={`请说明举报 ${profile.username} 的原因。`}
+          reason={reportReason}
+          error={reportError}
+          submitting={reporting}
+          onChange={(value) => {
+            setReportReason(value);
+            if (reportError) {
+              setReportError("");
+            }
+          }}
+          onCancel={() => {
+            if (reporting) {
+              return;
+            }
+            setReportOpen(false);
+            setReportReason("");
+            setReportError("");
+          }}
+          onConfirm={reportUser}
+          placeholder="请描述对方主页、简介或公开内容中的违规问题"
+        />
+      )}
     </SiteFrame>
   );
 }

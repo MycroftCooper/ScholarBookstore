@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ErrorLogReporter } from "@/components/ErrorLogReporter";
+import { FloatingTipProvider } from "@/components/feedback/FloatingTipProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,8 +17,10 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body>
-        <ErrorLogReporter />
-        {children}
+        <FloatingTipProvider>
+          <ErrorLogReporter />
+          {children}
+        </FloatingTipProvider>
       </body>
     </html>
   );

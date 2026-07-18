@@ -88,9 +88,28 @@ func (r *Repository) ListTasks(ctx context.Context, filter TaskFilter, page int,
 			mt.submitter_id, submitter.username,
 			mt.assignee_id, assignee.username,
 			mt.due_at, mt.resolved_at, mt.resolution, mt.resolution_note,
-			case when mt.object_type = 'article' then a.title else ar.reason end,
-			case when mt.object_type = 'article' then a.status else ar.status end,
+			case
+				when mt.object_type = 'article' then a.title
+				when mt.object_type = 'article_report' then ar.reason
+				when mt.object_type = 'comment_report' then cr.reason
+				when mt.object_type = 'user_report' then reported_user.username
+				else null
+			end,
+			case
+				when mt.object_type = 'article' then a.status
+				when mt.object_type = 'article_report' then ar.status
+				when mt.object_type = 'comment_report' then cr.status
+				when mt.object_type = 'user_report' then ur.status
+				else null
+			end,
 			null::text,
+			case
+				when mt.object_type = 'article' then a.author_id
+				when mt.object_type = 'article_report' then reported_article.author_id
+				when mt.object_type = 'comment_report' then reported_comment.author_id
+				when mt.object_type = 'user_report' then ur.reported_user_id
+				else null
+			end,
 			mt.created_at, mt.updated_at
 		from moderation_tasks mt
 		left join domains d on d.id = mt.domain_id
@@ -99,6 +118,11 @@ func (r *Repository) ListTasks(ctx context.Context, filter TaskFilter, page int,
 		left join users assignee on assignee.id = mt.assignee_id
 		left join articles a on mt.object_type = 'article' and a.id = mt.object_id
 		left join article_reports ar on mt.object_type = 'article_report' and ar.id = mt.object_id
+		left join articles reported_article on reported_article.id = ar.article_id
+		left join comment_reports cr on mt.object_type = 'comment_report' and cr.id = mt.object_id
+		left join comments reported_comment on reported_comment.id = cr.comment_id
+		left join user_reports ur on mt.object_type = 'user_report' and ur.id = mt.object_id
+		left join users reported_user on reported_user.id = ur.reported_user_id
 		where %s
 		order by
 			case when mt.status in ('pending', 'processing') then 0 else 1 end,
@@ -129,9 +153,34 @@ func (r *Repository) FindTask(ctx context.Context, id int64, actorID int64, acto
 			mt.submitter_id, submitter.username,
 			mt.assignee_id, assignee.username,
 			mt.due_at, mt.resolved_at, mt.resolution, mt.resolution_note,
-			case when mt.object_type = 'article' then a.title else ar.reason end,
-			case when mt.object_type = 'article' then a.status else ar.status end,
-			case when mt.object_type = 'article' then a.content_md else a2.content_md end,
+			case
+				when mt.object_type = 'article' then a.title
+				when mt.object_type = 'article_report' then ar.reason
+				when mt.object_type = 'comment_report' then cr.reason
+				when mt.object_type = 'user_report' then reported_user.username
+				else null
+			end,
+			case
+				when mt.object_type = 'article' then a.status
+				when mt.object_type = 'article_report' then ar.status
+				when mt.object_type = 'comment_report' then cr.status
+				when mt.object_type = 'user_report' then ur.status
+				else null
+			end,
+			case
+				when mt.object_type = 'article' then a.content_md
+				when mt.object_type = 'article_report' then a2.content_md
+				when mt.object_type = 'comment_report' then reported_comment.content
+				when mt.object_type = 'user_report' then concat_ws(E'\n', reported_user.bio, reported_user.school, reported_user.company)
+				else null
+			end,
+			case
+				when mt.object_type = 'article' then a.author_id
+				when mt.object_type = 'article_report' then a2.author_id
+				when mt.object_type = 'comment_report' then reported_comment.author_id
+				when mt.object_type = 'user_report' then ur.reported_user_id
+				else null
+			end,
 			mt.created_at, mt.updated_at
 		from moderation_tasks mt
 		left join domains d on d.id = mt.domain_id
@@ -141,6 +190,10 @@ func (r *Repository) FindTask(ctx context.Context, id int64, actorID int64, acto
 		left join articles a on mt.object_type = 'article' and a.id = mt.object_id
 		left join article_reports ar on mt.object_type = 'article_report' and ar.id = mt.object_id
 		left join articles a2 on mt.object_type = 'article_report' and a2.id = ar.article_id
+		left join comment_reports cr on mt.object_type = 'comment_report' and cr.id = mt.object_id
+		left join comments reported_comment on reported_comment.id = cr.comment_id
+		left join user_reports ur on mt.object_type = 'user_report' and ur.id = mt.object_id
+		left join users reported_user on reported_user.id = ur.reported_user_id
 		where %s
 	`, where)
 	item, err := scanTask(r.db.QueryRow(ctx, query, args...))
@@ -164,7 +217,7 @@ func (r *Repository) Stats(ctx context.Context, actorID int64, actorRole string)
 		select
 			count(*) filter (where mt.status in ('pending', 'processing') and (mt.assignee_id = $%d or mt.assignee_id is null)),
 			count(*) filter (where mt.status in ('pending', 'processing') and mt.task_type = 'article_review'),
-			count(*) filter (where mt.status in ('pending', 'processing') and mt.task_type in ('content_report', 'comment_report')),
+			count(*) filter (where mt.status in ('pending', 'processing') and mt.task_type in ('content_report', 'comment_report', 'user_report')),
 			count(*) filter (where mt.status in ('pending', 'processing') and mt.due_at is not null and mt.due_at < now()),
 			count(*) filter (where mt.resolved_at >= date_trunc('day', now()))
 		from moderation_tasks mt
@@ -385,6 +438,7 @@ func scanTask(scanner taskScanner) (Task, error) {
 	var objectTitle pgtype.Text
 	var objectStatus pgtype.Text
 	var objectContent pgtype.Text
+	var targetUserID pgtype.Int8
 	err := scanner.Scan(
 		&item.ID,
 		&item.TaskType,
@@ -409,6 +463,7 @@ func scanTask(scanner taskScanner) (Task, error) {
 		&objectTitle,
 		&objectStatus,
 		&objectContent,
+		&targetUserID,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	)
@@ -432,6 +487,7 @@ func scanTask(scanner taskScanner) (Task, error) {
 	item.ObjectTitle = textPtr(objectTitle)
 	item.ObjectStatus = textPtr(objectStatus)
 	item.ObjectContentMD = textPtr(objectContent)
+	item.TargetUserID = int8Ptr(targetUserID)
 	return item, nil
 }
 

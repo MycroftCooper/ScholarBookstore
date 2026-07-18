@@ -11,6 +11,7 @@ import (
 	"scholarbookstore/services/api/internal/auth"
 	httprequest "scholarbookstore/services/api/internal/http/request"
 	"scholarbookstore/services/api/internal/http/response"
+	"scholarbookstore/services/api/internal/moderation"
 	"scholarbookstore/services/api/internal/reports"
 )
 
@@ -18,14 +19,16 @@ type Handler struct {
 	service        *Service
 	articleService *articles.Service
 	reportService  *reports.Service
+	moderation     *moderation.Service
 }
 
 type taskActionRequest struct {
-	Note string `json:"note"`
+	Note    string                   `json:"note"`
+	Actions []moderation.ActionInput `json:"actions"`
 }
 
-func NewHandler(service *Service, articleService *articles.Service, reportService *reports.Service) *Handler {
-	return &Handler{service: service, articleService: articleService, reportService: reportService}
+func NewHandler(service *Service, articleService *articles.Service, reportService *reports.Service, moderationService *moderation.Service) *Handler {
+	return &Handler{service: service, articleService: articleService, reportService: reportService, moderation: moderationService}
 }
 
 func (h *Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +191,7 @@ func (h *Handler) handleTaskAction(w http.ResponseWriter, r *http.Request, actio
 		return
 	}
 
-	status, resolution, auditAction, actionErr := h.executeTaskAction(r, task, user.ID, user.Role, action, req.Note)
+	status, resolution, auditAction, actionErr := h.executeTaskAction(r, task, user.ID, user.Role, action, req.Note, req.Actions)
 	if actionErr != nil {
 		h.writeActionError(w, actionErr)
 		return
@@ -214,8 +217,9 @@ func (h *Handler) handleTaskAction(w http.ResponseWriter, r *http.Request, actio
 		DomainID:   task.DomainID,
 		ModuleID:   task.ModuleID,
 		Detail: map[string]string{
-			"taskId": strconv.FormatInt(task.ID, 10),
-			"note":   req.Note,
+			"taskId":  strconv.FormatInt(task.ID, 10),
+			"note":    req.Note,
+			"actions": formatModerationActions(req.Actions),
 		},
 		IP:        r.RemoteAddr,
 		UserAgent: r.UserAgent(),
@@ -223,7 +227,7 @@ func (h *Handler) handleTaskAction(w http.ResponseWriter, r *http.Request, actio
 	response.JSON(w, http.StatusOK, resolved, nil)
 }
 
-func (h *Handler) executeTaskAction(r *http.Request, task Task, actorID int64, actorRole string, action string, note string) (string, string, string, error) {
+func (h *Handler) executeTaskAction(r *http.Request, task Task, actorID int64, actorRole string, action string, note string, actions []moderation.ActionInput) (string, string, string, error) {
 	switch task.TaskType {
 	case "article_review":
 		switch action {
@@ -257,8 +261,69 @@ func (h *Handler) executeTaskAction(r *http.Request, task Task, actorID int64, a
 			if note == "" {
 				return "", "", "", ErrInvalidInput
 			}
-			_, err := h.reportService.Resolve(r.Context(), task.ObjectID, actorID, "resolved", note, true)
-			return "resolved", "taken_down", "content_report_taken_down", mapReportErr(err)
+			if len(actions) == 0 {
+				actions = []moderation.ActionInput{{Type: "hide_content"}}
+			}
+			_, err := h.reportService.Resolve(r.Context(), task.ObjectID, actorID, "resolved", note, hasAction(actions, "hide_content"))
+			if mapped := mapReportErr(err); mapped != nil {
+				return "", "", "", mapped
+			}
+			if err := h.applyModerationActions(r, task, actorID, note, "article_report", actions); err != nil {
+				return "", "", "", err
+			}
+			return "resolved", "penalized", "content_report_resolved", nil
+		default:
+			return "", "", "", ErrInvalidInput
+		}
+	case "comment_report":
+		switch action {
+		case "ignore":
+			if note == "" {
+				return "", "", "", ErrInvalidInput
+			}
+			_, err := h.reportService.ResolveComment(r.Context(), task.ObjectID, actorID, "rejected", note, false)
+			return "ignored", "ignored", "comment_report_ignored", mapReportErr(err)
+		case "take_down":
+			if note == "" {
+				return "", "", "", ErrInvalidInput
+			}
+			if len(actions) == 0 {
+				actions = []moderation.ActionInput{{Type: "hide_content"}}
+			}
+			_, err := h.reportService.ResolveComment(r.Context(), task.ObjectID, actorID, "resolved", note, hasAction(actions, "hide_content"))
+			if mapped := mapReportErr(err); mapped != nil {
+				return "", "", "", mapped
+			}
+			if err := h.applyModerationActions(r, task, actorID, note, "comment_report", actions); err != nil {
+				return "", "", "", err
+			}
+			return "resolved", "penalized", "comment_report_resolved", nil
+		default:
+			return "", "", "", ErrInvalidInput
+		}
+	case "user_report":
+		switch action {
+		case "ignore":
+			if note == "" {
+				return "", "", "", ErrInvalidInput
+			}
+			_, err := h.reportService.ResolveUser(r.Context(), task.ObjectID, actorID, "rejected", note, false)
+			return "ignored", "ignored", "user_report_ignored", mapReportErr(err)
+		case "take_down":
+			if note == "" {
+				return "", "", "", ErrInvalidInput
+			}
+			if len(actions) == 0 {
+				actions = []moderation.ActionInput{{Type: "disable_account"}}
+			}
+			_, err := h.reportService.ResolveUser(r.Context(), task.ObjectID, actorID, "resolved", note, hasAction(actions, "disable_account"))
+			if mapped := mapReportErr(err); mapped != nil {
+				return "", "", "", mapped
+			}
+			if err := h.applyModerationActions(r, task, actorID, note, "user_report", actions); err != nil {
+				return "", "", "", err
+			}
+			return "resolved", "penalized", "user_report_resolved", nil
 		default:
 			return "", "", "", ErrInvalidInput
 		}
@@ -287,6 +352,94 @@ func (h *Handler) writeActionError(w http.ResponseWriter, err error) {
 	response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "服务暂时不可用", nil)
 }
 
+func (h *Handler) applyModerationActions(r *http.Request, task Task, actorID int64, note string, sourceType string, actions []moderation.ActionInput) error {
+	if h.moderation == nil {
+		return nil
+	}
+	for _, action := range actions {
+		action.Type = strings.TrimSpace(action.Type)
+		switch action.Type {
+		case "hide_content":
+			continue
+		case "disable_account":
+			if task.TargetUserID == nil {
+				return ErrInvalidInput
+			}
+			if err := h.moderation.DisableUser(r.Context(), *task.TargetUserID); err != nil {
+				return mapModerationErr(err)
+			}
+			if err := h.createPenalty(r, task, actorID, note, sourceType, moderation.PenaltyAccountDisabled, 0); err != nil {
+				return err
+			}
+		case "restrict_follow":
+			if err := h.createPenalty(r, task, actorID, note, sourceType, moderation.PenaltyFollowRestricted, action.Duration); err != nil {
+				return err
+			}
+		case "ban_article_create":
+			if err := h.createPenalty(r, task, actorID, note, sourceType, moderation.PenaltyArticleCreateBanned, action.Duration); err != nil {
+				return err
+			}
+		case "ban_comment_create":
+			if err := h.createPenalty(r, task, actorID, note, sourceType, moderation.PenaltyCommentCreateBanned, action.Duration); err != nil {
+				return err
+			}
+		default:
+			return ErrInvalidInput
+		}
+	}
+	return nil
+}
+
+func (h *Handler) createPenalty(r *http.Request, task Task, actorID int64, note string, sourceType string, penaltyType string, durationDays int) error {
+	if task.TargetUserID == nil || durationDays < 0 || durationDays > 3650 {
+		return ErrInvalidInput
+	}
+	targetType := "user"
+	var targetID *int64
+	switch task.ObjectType {
+	case "article_report":
+		targetType = "article"
+	case "comment_report":
+		targetType = "comment"
+	}
+	if targetType != "user" {
+		id := task.ObjectID
+		targetID = &id
+	}
+	err := h.moderation.CreatePenalty(r.Context(), moderation.PenaltyInput{
+		UserID:     *task.TargetUserID,
+		Type:       penaltyType,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Reason:     note,
+		ExpiresAt:  moderation.ExpiresInDays(durationDays),
+		CreatedBy:  actorID,
+		SourceType: sourceType,
+		SourceID:   task.ObjectID,
+	})
+	return mapModerationErr(err)
+}
+
+func hasAction(actions []moderation.ActionInput, actionType string) bool {
+	for _, action := range actions {
+		if strings.TrimSpace(action.Type) == actionType {
+			return true
+		}
+	}
+	return false
+}
+
+func formatModerationActions(actions []moderation.ActionInput) string {
+	if len(actions) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(actions))
+	for _, action := range actions {
+		parts = append(parts, fmt.Sprintf("%s:%d", strings.TrimSpace(action.Type), action.Duration))
+	}
+	return strings.Join(parts, ",")
+}
+
 func mapArticleErr(err error) error {
 	if errors.Is(err, articles.ErrInvalidInput) {
 		return ErrInvalidInput
@@ -312,6 +465,16 @@ func mapReportErr(err error) error {
 	}
 	if errors.Is(err, reports.ErrConflict) {
 		return ErrConflict
+	}
+	return err
+}
+
+func mapModerationErr(err error) error {
+	if errors.Is(err, moderation.ErrInvalidInput) {
+		return ErrInvalidInput
+	}
+	if errors.Is(err, moderation.ErrForbidden) {
+		return ErrForbidden
 	}
 	return err
 }
