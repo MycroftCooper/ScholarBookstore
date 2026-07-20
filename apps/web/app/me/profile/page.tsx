@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   ChangeEvent,
   FormEvent,
+  KeyboardEvent,
   useEffect,
   useMemo,
   useRef,
@@ -49,13 +50,12 @@ type Metrics = {
   followersCount: number;
 };
 
-const staticTags = ["后端开发", "Go", "云原生", "系统设计", "技术写作"];
-
 export default function ProfilePage() {
   const [data, setData] = useState<PageData | null>(null);
   const [bio, setBio] = useState("");
   const [school, setSchool] = useState("");
   const [company, setCompany] = useState("");
+  const [technicalTags, setTechnicalTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -78,6 +78,7 @@ export default function ProfilePage() {
     setBio(user.bio);
     setSchool(user.school);
     setCompany(user.company);
+    setTechnicalTags(user.technicalTags ?? []);
   }
 
   useEffect(() => {
@@ -115,10 +116,10 @@ export default function ProfilePage() {
       Boolean(bio.trim()),
       Boolean(school.trim()),
       Boolean(company.trim()),
-      staticTags.length >= 3,
+      technicalTags.length >= 3,
     ];
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }, [bio, company, data, school]);
+  }, [bio, company, data, school, technicalTags]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -130,11 +131,13 @@ export default function ProfilePage() {
         bio: bio.trim(),
         school: school.trim(),
         company: company.trim(),
+        technicalTags,
       });
       setData((current) => (current ? { ...current, user: updated } : current));
       setBio(updated.bio);
       setSchool(updated.school);
       setCompany(updated.company);
+      setTechnicalTags(updated.technicalTags);
       setSaved(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "保存失败，请稍后重试");
@@ -195,7 +198,7 @@ export default function ProfilePage() {
                 onAvatarChange={handleAvatarChange}
                 fileInputRef={fileInputRef}
               />
-              <TagPanel />
+              <TagPanel tags={technicalTags} onChange={setTechnicalTags} />
               <ContactPanel
                 user={data.user}
                 school={school}
@@ -235,7 +238,7 @@ export default function ProfilePage() {
             </form>
 
             <aside className="space-y-5">
-              <PreviewCard data={data} metrics={metrics} />
+              <PreviewCard data={data} metrics={metrics} technicalTags={technicalTags} />
               <CompletenessCard value={completeness} />
               <SuggestionCard />
             </aside>
@@ -389,25 +392,96 @@ function BasicInfo({
   );
 }
 
-function TagPanel() {
+function TagPanel({
+  tags,
+  onChange,
+}: {
+  tags: string[];
+  onChange: (tags: string[]) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [tagError, setTagError] = useState("");
+
+  function addTag() {
+    const nextTag = value.trim();
+    if (!nextTag) {
+      return;
+    }
+    if (Array.from(nextTag).length > 30) {
+      setTagError("单个标签不能超过 30 个字符");
+      return;
+    }
+    if (tags.length >= 10) {
+      setTagError("最多添加 10 个技术标签");
+      return;
+    }
+    const normalized = nextTag.toLocaleLowerCase();
+    if (tags.some((tag) => tag.toLocaleLowerCase() === normalized)) {
+      setTagError("这个标签已经添加过了");
+      return;
+    }
+    onChange([...tags, nextTag]);
+    setValue("");
+    setTagError("");
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addTag();
+    }
+  }
+
   return (
     <Panel title="技术标签 / 擅长领域">
       <div className="flex flex-wrap gap-2">
-        {staticTags.map((tag) => (
+        {tags.map((tag) => (
           <span
             key={tag}
-            className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-3 py-2 text-sm font-semibold text-[var(--color-muted)]"
+            className="inline-flex items-center gap-2 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-3 py-2 text-sm font-semibold text-[var(--color-muted)]"
           >
             {tag}
+            <button
+              type="button"
+              onClick={() => onChange(tags.filter((item) => item !== tag))}
+              aria-label={`删除技术标签 ${tag}`}
+              className="text-base leading-none text-[var(--color-muted)] hover:text-red-600"
+            >
+              ×
+            </button>
           </span>
         ))}
-        <span className="rounded-md border border-dashed border-[var(--color-line)] px-3 py-2 text-sm font-semibold text-[var(--color-muted)]">
-          + 添加标签
-        </span>
       </div>
-      <p className="mt-3 text-xs text-[var(--color-muted)]">
-        标签保存能力后续开放，目前仅作资料展示占位。
-      </p>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <input
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value);
+            if (tagError) {
+              setTagError("");
+            }
+          }}
+          onKeyDown={handleKeyDown}
+          maxLength={30}
+          disabled={tags.length >= 10}
+          className={inputClass}
+          placeholder={tags.length >= 10 ? "已达到 10 个标签上限" : "输入标签后按 Enter 添加"}
+        />
+        <button
+          type="button"
+          onClick={addTag}
+          disabled={!value.trim() || tags.length >= 10}
+          className="h-11 shrink-0 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-4 text-sm font-semibold text-[var(--color-ink)] transition hover:border-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          添加标签
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-4 text-xs">
+        <span className={tagError ? "text-red-600" : "text-[var(--color-muted)]"}>
+          {tagError || "自由填写技术方向；保存时会自动去重。"}
+        </span>
+        <span className="shrink-0 text-[var(--color-muted)]">{tags.length}/10</span>
+      </div>
     </Panel>
   );
 }
@@ -489,7 +563,15 @@ function DisplayPanel() {
   );
 }
 
-function PreviewCard({ data, metrics }: { data: PageData; metrics: Metrics }) {
+function PreviewCard({
+  data,
+  metrics,
+  technicalTags,
+}: {
+  data: PageData;
+  metrics: Metrics;
+  technicalTags: string[];
+}) {
   return (
     <Panel
       title="资料预览"
@@ -509,7 +591,7 @@ function PreviewCard({ data, metrics }: { data: PageData; metrics: Metrics }) {
           {bioPreview(data.user.bio)}
         </p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {staticTags.slice(0, 3).map((tag) => (
+          {technicalTags.slice(0, 3).map((tag) => (
             <Badge key={tag}>{tag}</Badge>
           ))}
         </div>

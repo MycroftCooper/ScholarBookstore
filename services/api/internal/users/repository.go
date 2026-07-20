@@ -32,7 +32,7 @@ func (r *Repository) Create(ctx context.Context, username string, email string, 
 		values ($1, $2, $3, 'user', 'active')
 		returning
 			id, username, email, password_hash, role, status,
-			avatar_url, bio, school, company, created_at, updated_at
+			avatar_url, bio, school, company, technical_tags, created_at, updated_at
 	`
 
 	var user User
@@ -47,6 +47,7 @@ func (r *Repository) Create(ctx context.Context, username string, email string, 
 		&user.Bio,
 		&user.School,
 		&user.Company,
+		&user.TechnicalTags,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -64,7 +65,7 @@ func (r *Repository) FindByEmail(ctx context.Context, email string) (User, error
 	const query = `
 		select
 			id, username, email, password_hash, role, status,
-			avatar_url, bio, school, company, created_at, updated_at
+			avatar_url, bio, school, company, technical_tags, created_at, updated_at
 		from users
 		where lower(email) = lower($1) and deleted_at is null
 	`
@@ -75,7 +76,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (User, error) {
 	const query = `
 		select
 			id, username, email, password_hash, role, status,
-			avatar_url, bio, school, company, created_at, updated_at
+			avatar_url, bio, school, company, technical_tags, created_at, updated_at
 		from users
 		where id = $1 and deleted_at is null
 	`
@@ -85,13 +86,13 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (User, error) {
 func (r *Repository) UpdateProfile(ctx context.Context, id int64, input UpdateProfileInput) (User, error) {
 	const query = `
 		update users
-		set bio = $2, school = $3, company = $4, updated_at = now()
+		set bio = $2, school = $3, company = $4, technical_tags = $5, updated_at = now()
 		where id = $1 and deleted_at is null
 		returning
 			id, username, email, password_hash, role, status,
-			avatar_url, bio, school, company, created_at, updated_at
+			avatar_url, bio, school, company, technical_tags, created_at, updated_at
 	`
-	return r.findOne(ctx, query, id, input.Bio, input.School, input.Company)
+	return r.findOne(ctx, query, id, input.Bio, input.School, input.Company, input.TechnicalTags)
 }
 
 func (r *Repository) UpdateAvatar(ctx context.Context, id int64, avatarURL string) (User, error) {
@@ -101,14 +102,14 @@ func (r *Repository) UpdateAvatar(ctx context.Context, id int64, avatarURL strin
 		where id = $1 and deleted_at is null
 		returning
 			id, username, email, password_hash, role, status,
-			avatar_url, bio, school, company, created_at, updated_at
+			avatar_url, bio, school, company, technical_tags, created_at, updated_at
 	`
 	return r.findOne(ctx, query, id, avatarURL)
 }
 
 func (r *Repository) FindPublicAuthorProfile(ctx context.Context, username string, page int, pageSize int) (PublicAuthorProfile, int64, error) {
 	const authorQuery = `
-		select id, username, avatar_url, bio, school, company
+		select id, username, avatar_url, bio, school, company, technical_tags
 		from users
 		where lower(username) = lower($1) and status = 'active' and deleted_at is null
 	`
@@ -120,6 +121,7 @@ func (r *Repository) FindPublicAuthorProfile(ctx context.Context, username strin
 		&author.Bio,
 		&author.School,
 		&author.Company,
+		&author.TechnicalTags,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PublicAuthorProfile{}, 0, ErrNotFound
@@ -288,7 +290,7 @@ func (r *Repository) ListAdmin(ctx context.Context, filter AdminUserFilter, page
 	query := fmt.Sprintf(`
 		select
 			id, username, email, password_hash, role, status,
-			avatar_url, bio, school, company, created_at, updated_at
+			avatar_url, bio, school, company, technical_tags, created_at, updated_at
 		from users
 		where %s
 		order by created_at desc, id desc
@@ -315,6 +317,7 @@ func (r *Repository) ListAdmin(ctx context.Context, filter AdminUserFilter, page
 			&user.Bio,
 			&user.School,
 			&user.Company,
+			&user.TechnicalTags,
 			&user.CreatedAt,
 			&user.UpdatedAt,
 		); err != nil {
@@ -338,7 +341,7 @@ func (r *Repository) UpdateAdmin(ctx context.Context, id int64, input UpdateAdmi
 		where id = $1 and deleted_at is null
 		returning
 			id, username, email, password_hash, role, status,
-			avatar_url, bio, school, company, created_at, updated_at
+			avatar_url, bio, school, company, technical_tags, created_at, updated_at
 	`
 	user, err := r.findOne(ctx, query, id, input.Role, input.Status)
 	if err != nil {
@@ -360,6 +363,7 @@ func (r *Repository) findOne(ctx context.Context, query string, args ...interfac
 		&user.Bio,
 		&user.School,
 		&user.Company,
+		&user.TechnicalTags,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)

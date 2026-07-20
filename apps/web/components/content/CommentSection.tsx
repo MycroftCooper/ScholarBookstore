@@ -271,7 +271,7 @@ export function CommentSection({
     }
   }
 
-  async function handleVote(comment: CommentItem, value: -1 | 1) {
+  async function handleVote(comment: CommentItem, value: 1) {
     if (comment.deleted || comment.visibility === "hidden") {
       return;
     }
@@ -535,7 +535,7 @@ function CommentCard({
   canDeleteReply: (reply: CommentItem) => boolean;
   currentUserId: number | null;
   reportedCommentIds: number[];
-  onVote: (comment: CommentItem, value: -1 | 1) => void;
+  onVote: (comment: CommentItem, value: 1) => void;
   onDelete: (id: number) => void;
   onReport: (comment: CommentItem) => void;
   onReplyToggle: () => void;

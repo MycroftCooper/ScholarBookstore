@@ -3,37 +3,40 @@ package users
 import "time"
 
 type User struct {
-	ID           int64
-	Username     string
-	Email        string
-	PasswordHash string
-	Role         string
-	Status       string
-	AvatarURL    string
-	Bio          string
-	School       string
-	Company      string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID            int64
+	Username      string
+	Email         string
+	PasswordHash  string
+	Role          string
+	Status        string
+	AvatarURL     string
+	Bio           string
+	School        string
+	Company       string
+	TechnicalTags []string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type PublicUser struct {
-	ID        int64     `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	Status    string    `json:"status"`
-	AvatarURL string    `json:"avatarUrl"`
-	Bio       string    `json:"bio"`
-	School    string    `json:"school"`
-	Company   string    `json:"company"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID            int64     `json:"id"`
+	Username      string    `json:"username"`
+	Email         string    `json:"email"`
+	Role          string    `json:"role"`
+	Status        string    `json:"status"`
+	AvatarURL     string    `json:"avatarUrl"`
+	Bio           string    `json:"bio"`
+	School        string    `json:"school"`
+	Company       string    `json:"company"`
+	TechnicalTags []string  `json:"technicalTags"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 type UpdateProfileInput struct {
-	Bio     string
-	School  string
-	Company string
+	Bio           string
+	School        string
+	Company       string
+	TechnicalTags []string
 }
 
 type AdminUserFilter struct {
@@ -98,6 +101,7 @@ type PublicAuthorProfile struct {
 	Bio                   string               `json:"bio"`
 	School                string               `json:"school"`
 	Company               string               `json:"company"`
+	TechnicalTags         []string             `json:"technicalTags"`
 	PublishedArticleCount int64                `json:"publishedArticleCount"`
 	FollowersCount        int64                `json:"followersCount"`
 	FollowingCount        int64                `json:"followingCount"`
@@ -115,16 +119,18 @@ type AuthorProfilePage struct {
 }
 
 func ToPublic(user User) PublicUser {
+	technicalTags := append([]string{}, user.TechnicalTags...)
 	return PublicUser{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		Role:      user.Role,
-		Status:    user.Status,
-		AvatarURL: user.AvatarURL,
-		Bio:       user.Bio,
-		School:    user.School,
-		Company:   user.Company,
-		CreatedAt: user.CreatedAt,
+		ID:            user.ID,
+		Username:      user.Username,
+		Email:         user.Email,
+		Role:          user.Role,
+		Status:        user.Status,
+		AvatarURL:     user.AvatarURL,
+		Bio:           user.Bio,
+		School:        user.School,
+		Company:       user.Company,
+		TechnicalTags: technicalTags,
+		CreatedAt:     user.CreatedAt,
 	}
 }

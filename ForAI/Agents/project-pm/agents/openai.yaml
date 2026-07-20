@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project PM"
+  short_description: "维护产品目标、功能范围、版本计划、交付状态与关键决策记录"
+  default_prompt: "Use $project-pm to audit the current project scope and update its PM source of truth."

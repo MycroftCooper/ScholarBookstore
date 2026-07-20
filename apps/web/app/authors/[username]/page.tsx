@@ -274,6 +274,18 @@ function AuthorCard({
       <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
         {profile.bio || "这位作者还没有填写个人简介。"}
       </p>
+      {profile.technicalTags.length > 0 && (
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          {profile.technicalTags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-md border border-[var(--color-line)] bg-[var(--color-surface-solid)] px-2.5 py-1 text-xs font-semibold text-[var(--color-muted)]"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="mt-5 grid gap-2">
         <button
           type="button"

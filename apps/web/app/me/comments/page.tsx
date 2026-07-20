@@ -363,8 +363,6 @@ function CommentList({
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-[var(--color-muted)]">
                   <span>赞 {formatCompact(comment.upVotes)}</span>
-                  <span>踩 {formatCompact(comment.downVotes)}</span>
-                  <span>得分 {formatCompact(comment.score)}</span>
                   <span>{formatRelative(comment.createdAt)}</span>
                 </div>
               </div>

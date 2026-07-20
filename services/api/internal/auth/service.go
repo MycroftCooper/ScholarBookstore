@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -143,6 +144,11 @@ func (s *Service) UpdateProfile(ctx context.Context, userID int64, input users.U
 	input.Bio = strings.TrimSpace(input.Bio)
 	input.School = strings.TrimSpace(input.School)
 	input.Company = strings.TrimSpace(input.Company)
+	technicalTags, err := normalizeTechnicalTags(input.TechnicalTags)
+	if err != nil {
+		return users.PublicUser{}, err
+	}
+	input.TechnicalTags = technicalTags
 	if userID <= 0 || len(input.Bio) > 200 || len(input.School) > 100 || len(input.Company) > 100 {
 		return users.PublicUser{}, ErrInvalidInput
 	}
@@ -155,6 +161,35 @@ func (s *Service) UpdateProfile(ctx context.Context, userID int64, input users.U
 		return users.PublicUser{}, err
 	}
 	return users.ToPublic(user), nil
+}
+
+const (
+	maxTechnicalTags      = 10
+	maxTechnicalTagLength = 30
+)
+
+func normalizeTechnicalTags(values []string) ([]string, error) {
+	tags := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		tag := strings.TrimSpace(value)
+		if tag == "" {
+			continue
+		}
+		if utf8.RuneCountInString(tag) > maxTechnicalTagLength {
+			return nil, ErrInvalidInput
+		}
+		normalized := strings.ToLower(tag)
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		tags = append(tags, tag)
+		if len(tags) > maxTechnicalTags {
+			return nil, ErrInvalidInput
+		}
+	}
+	return tags, nil
 }
 
 const maxAvatarBytes int64 = 2 * 1024 * 1024

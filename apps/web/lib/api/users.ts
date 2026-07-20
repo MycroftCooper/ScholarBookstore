@@ -24,6 +24,7 @@ export type PublicAuthorProfile = {
   bio: string;
   school: string;
   company: string;
+  technicalTags: string[];
   publishedArticleCount: number;
   followersCount: number;
   followingCount: number;

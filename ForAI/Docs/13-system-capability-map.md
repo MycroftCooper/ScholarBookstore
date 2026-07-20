@@ -21,7 +21,7 @@
 | 公开文章 | 列表、详情、FTS 搜索、Tag 筛选、hot/random/latest | `/api/v1/articles`、`/api/v1/articles/{id}` | `articles`、`tags`、`article_tags` | public | `/discover`、`/articles/[id]` | `[x] 已实现并有测试` | `[x] 已同步` |
 | Tag | 公开查询、后台列表、重命名、删除、合并 | `/api/v1/tags`、`/api/v1/admin/tags/*` | `tags`、`article_tags` | public/admin | `/admin/tags`、投稿页 Tag 推荐 | `[x] 已实现并有测试` | `[x] 已同步` |
 | 评论 | 文章评论、回复、软删除、后台隐藏/恢复 | `/api/v1/articles/{id}/comments`、`/api/v1/comments/*`、`/api/v1/admin/comments/*` | `comments` | user+/reviewer/admin | `CommentSection`、`/me/comments` | `[x] 已实现并有测试` | `[x] 已同步` |
-| 评论投票 | 赞/踩/取消、禁止自评投票 | `/api/v1/comments/{id}/vote` | `comment_votes` | user+ | `CommentSection` | `[x] 已实现并有测试` | `[x] 已同步` |
+| 内容点赞 | 文章/评论点赞与取消、禁止给自己的内容点赞 | `/api/v1/articles/{id}/vote`、`/api/v1/comments/{id}/vote` | `article_votes`、`comment_votes` | user+ | 文章详情、`CommentSection` | `[x] 已实现并有测试` | `[x] 已同步` |
 | 收藏 | 默认收藏夹、自定义收藏夹、收藏/取消、移动、删除转移 | `/api/v1/me/bookmark-collections`、`/api/v1/articles/{id}/bookmark`、`/api/v1/me/bookmarks` | `bookmark_collections`、`article_bookmarks` | user+ | `/me/bookmarks` | `[x] 已实现并有测试` | `[x] 已同步` |
 | 关注 | 关注/取关、关注列表、粉丝列表、作者页关注状态 | `/api/v1/users/{username}/follow`、`/api/v1/me/following`、`/api/v1/me/followers` | `user_follows` | user+ | `/me/following`、`/me/followers`、作者页 | `[x] 已实现并有测试` | `[x] 已同步` |
 | 通知 | 我的通知、未读数、单条已读、全部已读 | `/api/v1/me/notifications/*` | `notifications` | user+ | `/me/notifications` | `[x] 已实现并有测试` | `[x] 已同步` |

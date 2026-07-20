@@ -63,7 +63,7 @@ func (r *Repository) ListByArticle(ctx context.Context, articleID int64, viewerI
 
 	parentOrderBy := "c.created_at desc, c.id desc"
 	if sort == "hot" {
-		parentOrderBy = "((select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = 1) - (select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = -1)) desc, (select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = 1) desc, c.created_at desc, c.id desc"
+		parentOrderBy = "(select count(*) from comment_votes cv where cv.comment_id = c.id) desc, c.created_at desc, c.id desc"
 	}
 
 	query := fmt.Sprintf(`
@@ -91,8 +91,7 @@ func (r *Repository) ListByArticle(ctx context.Context, articleID int64, viewerI
 			c.id, c.article_id, a.title, c.author_id, u.username, c.parent_id,
 			c.reply_to_user_id, ru.username, c.content, c.visibility,
 			(c.deleted_at is not null) as deleted,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = 1) as up_votes,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = -1) as down_votes,
+			(select count(*) from comment_votes cv where cv.comment_id = c.id) as up_votes,
 			coalesce((select cv.value from comment_votes cv where cv.comment_id = c.id and cv.user_id = $2), 0) as my_vote,
 			c.created_at, c.updated_at
 		from comments c
@@ -134,8 +133,7 @@ func (r *Repository) ListMine(ctx context.Context, authorID int64, page int, pag
 			c.id, c.article_id, a.title, c.author_id, u.username, c.parent_id,
 			c.reply_to_user_id, ru.username, c.content, c.visibility,
 			(c.deleted_at is not null) as deleted,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = 1) as up_votes,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = -1) as down_votes,
+			(select count(*) from comment_votes cv where cv.comment_id = c.id) as up_votes,
 			0 as my_vote,
 			c.created_at, c.updated_at
 		from comments c
@@ -169,8 +167,7 @@ func (r *Repository) ListAdmin(ctx context.Context, page int, pageSize int) ([]C
 			c.id, c.article_id, a.title, c.author_id, u.username, c.parent_id,
 			c.reply_to_user_id, ru.username, c.content, c.visibility,
 			(c.deleted_at is not null) as deleted,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = 1) as up_votes,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = -1) as down_votes,
+			(select count(*) from comment_votes cv where cv.comment_id = c.id) as up_votes,
 			0 as my_vote,
 			c.created_at, c.updated_at
 		from comments c
@@ -313,10 +310,10 @@ func (r *Repository) SetVisibility(ctx context.Context, id int64, visibility str
 	return r.findAny(ctx, r.db, updatedID)
 }
 
-func (r *Repository) SetVote(ctx context.Context, commentID int64, userID int64, value int) (Comment, error) {
+func (r *Repository) SetVote(ctx context.Context, commentID int64, userID int64) (Comment, error) {
 	const query = `
 		insert into comment_votes (comment_id, user_id, value)
-		select $1, $2, $3
+		select $1, $2, 1
 		where exists (
 			select 1
 			from comments c
@@ -333,7 +330,7 @@ func (r *Repository) SetVote(ctx context.Context, commentID int64, userID int64,
 		returning comment_id
 	`
 	var votedCommentID int64
-	err := r.db.QueryRow(ctx, query, commentID, userID, value).Scan(&votedCommentID)
+	err := r.db.QueryRow(ctx, query, commentID, userID).Scan(&votedCommentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Comment{}, ErrNotFound
 	}
@@ -373,8 +370,7 @@ func (r *Repository) findVisibleWithViewer(ctx context.Context, q queryer, id in
 			c.id, c.article_id, a.title, c.author_id, u.username, c.parent_id,
 			c.reply_to_user_id, ru.username, c.content, c.visibility,
 			(c.deleted_at is not null) as deleted,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = 1) as up_votes,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = -1) as down_votes,
+			(select count(*) from comment_votes cv where cv.comment_id = c.id) as up_votes,
 			coalesce((select cv.value from comment_votes cv where cv.comment_id = c.id and cv.user_id = $2), 0) as my_vote,
 			c.created_at, c.updated_at
 		from comments c
@@ -399,8 +395,7 @@ func (r *Repository) findAny(ctx context.Context, q queryer, id int64) (Comment,
 			c.id, c.article_id, a.title, c.author_id, u.username, c.parent_id,
 			c.reply_to_user_id, ru.username, c.content, c.visibility,
 			(c.deleted_at is not null) as deleted,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = 1) as up_votes,
-			(select count(*) from comment_votes cv where cv.comment_id = c.id and cv.value = -1) as down_votes,
+			(select count(*) from comment_votes cv where cv.comment_id = c.id) as up_votes,
 			0 as my_vote,
 			c.created_at, c.updated_at
 		from comments c
@@ -459,7 +454,6 @@ func scanComment(scanner commentScanner) (Comment, error) {
 		&item.Visibility,
 		&item.Deleted,
 		&item.UpVotes,
-		&item.DownVotes,
 		&item.MyVote,
 		&item.CreatedAt,
 		&item.UpdatedAt,

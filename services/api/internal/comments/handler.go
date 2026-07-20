@@ -119,7 +119,7 @@ func (h *Handler) Vote(w http.ResponseWriter, r *http.Request) {
 
 	comment, err := h.service.Vote(r.Context(), commentID, user.ID, req.Value)
 	if errors.Is(err, ErrInvalidInput) {
-		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "赞踩参数不合法", nil)
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "点赞参数不合法", nil)
 		return
 	}
 	if errors.Is(err, ErrNotFound) {

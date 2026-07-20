@@ -4,6 +4,8 @@
 
 后续 AI 编码工具必须把本文档作为硬约束。任何代码实现必须优先遵守 `ForAI/Docs` 下的项目文档。
 
+任何功能开发开始前还必须阅读 `ForAI/PM/PRODUCT.md`、`SCOPE.md`、`RELEASE.md` 和 `STATUS.md`。`ForAI/PM` 决定做什么，`ForAI/Docs` 决定如何实现；两者冲突时先停止实现并按 PM 决策收口文档，不得根据旧需求恢复已冻结、延期或移除的功能。
+
 目标是小步、可审查、可回滚地开发知识库社区网站，而不是一次性生成大量难以维护的代码。
 
 第一版产品结构固定为：
@@ -195,8 +197,8 @@
 - 页面路由变化：更新 `07-pages-routes.md`。
 - 开发阶段变化：更新 `08-development-plan.md`。
 - 部署方式变化：更新 `09-deployment-operations.md`。
-- 新增未实现功能或发现明确功能缺口：更新 `TODO.md`。
-- 完成 `TODO.md` 中的功能后：移除对应 TODO 条目，不保留已完成事项。
+- 新增产品能力、发现功能缺口或改变范围：先按 `ForAI/PM` 流程判断，分别更新 `SCOPE.md`、`RELEASE.md`、`STATUS.md` 和必要的 `DECISIONS.md`，不得另建 TODO 清单形成第二事实源。
+- 完成功能并验证后：更新 `ForAI/PM/STATUS.md` 和 `RELEASE.md` 中的状态与证据；范围决定发生变化时同步更新 `SCOPE.md`。
 
 ## 14. 不确定性处理
 

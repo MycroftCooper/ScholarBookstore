@@ -24,7 +24,6 @@ const taskTypeLabel: Record<string, string> = {
   content_report: "举报处理",
   comment_report: "评论举报",
   user_report: "用户举报",
-  role_request: "角色申请",
 };
 
 const statusLabel: Record<string, string> = {
@@ -180,7 +179,6 @@ export default function AdminTasksPage() {
                   ["article_review", "文章审核"],
                   ["content_report", "举报处理"],
                   ["user_report", "用户举报"],
-                  ["role_request", "角色申请"],
                 ].map(([key, label]) => (
                   <button
                     key={key}

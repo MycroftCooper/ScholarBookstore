@@ -237,10 +237,10 @@ func (r *Repository) IncrementViewCount(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *Repository) SetVote(ctx context.Context, articleID int64, userID int64, value int) (Article, error) {
+func (r *Repository) SetVote(ctx context.Context, articleID int64, userID int64) (Article, error) {
 	const query = `
 		insert into article_votes (article_id, user_id, value)
-		select $1, $2, $3
+		select $1, $2, 1
 		where exists (
 			select 1
 			from articles a
@@ -260,7 +260,7 @@ func (r *Repository) SetVote(ctx context.Context, articleID int64, userID int64,
 		returning article_id
 	`
 	var votedArticleID int64
-	err := r.db.QueryRow(ctx, query, articleID, userID, value).Scan(&votedArticleID)
+	err := r.db.QueryRow(ctx, query, articleID, userID).Scan(&votedArticleID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Article{}, ErrNotFound
 	}
@@ -1036,7 +1036,6 @@ func (r *Repository) withStat(ctx context.Context, item Article) Article {
 		item.BookmarkCount = stat.bookmarkCount
 		item.CommentCount = stat.commentCount
 		item.UpVotes = stat.upVotes
-		item.DownVotes = stat.downVotes
 	}
 	return item
 }
@@ -1052,7 +1051,6 @@ func (r *Repository) withStats(ctx context.Context, items []Article) []Article {
 			items[i].BookmarkCount = stat.bookmarkCount
 			items[i].CommentCount = stat.commentCount
 			items[i].UpVotes = stat.upVotes
-			items[i].DownVotes = stat.downVotes
 		}
 	}
 	return items
@@ -1062,7 +1060,6 @@ type articleStats struct {
 	bookmarkCount int64
 	commentCount  int64
 	upVotes       int64
-	downVotes     int64
 }
 
 func (r *Repository) loadStats(ctx context.Context, articleIDs []int64) map[int64]articleStats {
@@ -1090,8 +1087,7 @@ func (r *Repository) loadStats(ctx context.Context, articleIDs []int64) map[int6
 						)
 					)
 			) as comment_count,
-			(select count(*) from article_votes av where av.article_id = a.id and av.value = 1) as up_votes,
-			(select count(*) from article_votes av where av.article_id = a.id and av.value = -1) as down_votes
+			(select count(*) from article_votes av where av.article_id = a.id) as up_votes
 		from articles a
 		where a.id = any($1)
 	`, articleIDs)
@@ -1103,7 +1099,7 @@ func (r *Repository) loadStats(ctx context.Context, articleIDs []int64) map[int6
 	for rows.Next() {
 		var articleID int64
 		var stat articleStats
-		if err := rows.Scan(&articleID, &stat.bookmarkCount, &stat.commentCount, &stat.upVotes, &stat.downVotes); err != nil {
+		if err := rows.Scan(&articleID, &stat.bookmarkCount, &stat.commentCount, &stat.upVotes); err != nil {
 			continue
 		}
 		out[articleID] = stat

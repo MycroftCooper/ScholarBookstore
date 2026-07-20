@@ -31,7 +31,7 @@ type ArticleRepository interface {
 	FindPublishedByIDForViewer(ctx context.Context, id int64, viewerID int64) (Article, error)
 	FindPreviewModule(ctx context.Context, id int64) (PreviewModule, error)
 	IncrementViewCount(ctx context.Context, id int64) error
-	SetVote(ctx context.Context, articleID int64, userID int64, value int) (Article, error)
+	SetVote(ctx context.Context, articleID int64, userID int64) (Article, error)
 	ClearVote(ctx context.Context, articleID int64, userID int64) (Article, error)
 	ListMine(ctx context.Context, authorID int64, status string, page int, pageSize int) ([]Article, int64, error)
 	Create(ctx context.Context, input CreateArticleInput) (Article, error)
@@ -132,7 +132,7 @@ func (s *Service) Vote(ctx context.Context, articleID int64, userID int64, value
 	if articleID <= 0 || userID <= 0 {
 		return PublicArticle{}, ErrNotFound
 	}
-	if value != -1 && value != 0 && value != 1 {
+	if value != 0 && value != 1 {
 		return PublicArticle{}, ErrInvalidInput
 	}
 
@@ -143,7 +143,7 @@ func (s *Service) Vote(ctx context.Context, articleID int64, userID int64, value
 	if value == 0 {
 		item, err = s.repo.ClearVote(ctx, articleID, userID)
 	} else {
-		item, err = s.repo.SetVote(ctx, articleID, userID, value)
+		item, err = s.repo.SetVote(ctx, articleID, userID)
 	}
 	if err != nil {
 		return PublicArticle{}, err

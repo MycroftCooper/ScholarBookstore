@@ -19,9 +19,7 @@ export type ArticleSummary = {
   readingMinutes: number;
   viewCount: number;
   upVotes: number;
-  downVotes: number;
-  score: number;
-  myVote: -1 | 0 | 1;
+  myVote: 0 | 1;
   bookmarkCount: number;
   commentCount: number;
   revisionCount: number;
@@ -81,7 +79,7 @@ export function getArticle(id: number) {
   return apiRequest<ArticleSummary>(`/articles/${id}`);
 }
 
-export function voteArticle(id: number, value: -1 | 0 | 1) {
+export function voteArticle(id: number, value: 0 | 1) {
   return apiRequest<ArticleSummary>(`/articles/${id}/vote`, {
     method: "PUT",
     body: JSON.stringify({ value }),

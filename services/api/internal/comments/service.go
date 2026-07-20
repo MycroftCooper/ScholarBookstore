@@ -22,7 +22,7 @@ type CommentRepository interface {
 	CreateReply(ctx context.Context, tx pgx.Tx, authorID int64, parent ParentComment, content string) (Comment, error)
 	Delete(ctx context.Context, id int64, userID int64, canDeleteAny bool) error
 	SetVisibility(ctx context.Context, id int64, visibility string) (Comment, error)
-	SetVote(ctx context.Context, commentID int64, userID int64, value int) (Comment, error)
+	SetVote(ctx context.Context, commentID int64, userID int64) (Comment, error)
 	ClearVote(ctx context.Context, commentID int64, userID int64) (Comment, error)
 }
 
@@ -86,7 +86,7 @@ func (s *Service) Vote(ctx context.Context, commentID int64, userID int64, value
 	if commentID <= 0 || userID <= 0 {
 		return PublicComment{}, ErrNotFound
 	}
-	if value != -1 && value != 0 && value != 1 {
+	if value != 0 && value != 1 {
 		return PublicComment{}, ErrInvalidInput
 	}
 
@@ -97,7 +97,7 @@ func (s *Service) Vote(ctx context.Context, commentID int64, userID int64, value
 	if value == 0 {
 		item, err = s.comments.ClearVote(ctx, commentID, userID)
 	} else {
-		item, err = s.comments.SetVote(ctx, commentID, userID, value)
+		item, err = s.comments.SetVote(ctx, commentID, userID)
 	}
 	if err != nil {
 		return PublicComment{}, err

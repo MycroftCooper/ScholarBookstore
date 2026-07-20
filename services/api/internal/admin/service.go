@@ -138,7 +138,7 @@ func (s *Service) ListAuditLogs(ctx context.Context, filter AuditLogFilter, acto
 
 func validTaskType(value string) bool {
 	switch value {
-	case "", "article_review", "content_report", "comment_report", "user_report", "appeal", "role_request", "module_create_request":
+	case "", "article_review", "content_report", "comment_report", "user_report", "appeal", "module_create_request":
 		return true
 	default:
 		return false

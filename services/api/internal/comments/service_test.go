@@ -12,7 +12,7 @@ import (
 
 type fakeCommentRepo struct {
 	deletedCanDeleteAny bool
-	voteValue           int
+	voted               bool
 	clearedVote         bool
 	visibility          string
 }
@@ -50,9 +50,9 @@ func (r *fakeCommentRepo) SetVisibility(_ context.Context, id int64, visibility 
 	r.visibility = visibility
 	return Comment{ID: id, Visibility: visibility}, nil
 }
-func (r *fakeCommentRepo) SetVote(_ context.Context, commentID int64, userID int64, value int) (Comment, error) {
-	r.voteValue = value
-	return Comment{ID: commentID, AuthorID: userID + 1, MyVote: value}, nil
+func (r *fakeCommentRepo) SetVote(_ context.Context, commentID int64, userID int64) (Comment, error) {
+	r.voted = true
+	return Comment{ID: commentID, AuthorID: userID + 1, MyVote: 1}, nil
 }
 func (r *fakeCommentRepo) ClearVote(_ context.Context, commentID int64, userID int64) (Comment, error) {
 	r.clearedVote = true
@@ -72,6 +72,15 @@ func TestVoteRejectsInvalidValue(t *testing.T) {
 	service := NewService(&fakeCommentRepo{}, &fakeCommentNotificationRepo{})
 
 	_, err := service.Vote(context.Background(), 1, 2, 2)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestVoteRejectsDownvote(t *testing.T) {
+	service := NewService(&fakeCommentRepo{}, &fakeCommentNotificationRepo{})
+
+	_, err := service.Vote(context.Background(), 1, 2, -1)
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}

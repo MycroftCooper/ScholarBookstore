@@ -27,9 +27,10 @@ type loginRequest struct {
 }
 
 type updateProfileRequest struct {
-	Bio     string `json:"bio"`
-	School  string `json:"school"`
-	Company string `json:"company"`
+	Bio           string   `json:"bio"`
+	School        string   `json:"school"`
+	Company       string   `json:"company"`
+	TechnicalTags []string `json:"technicalTags"`
 }
 
 func NewHandler(cfg config.Config, service *Service) *Handler {
@@ -120,9 +121,10 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated, err := h.service.UpdateProfile(r.Context(), user.ID, users.UpdateProfileInput{
-		Bio:     req.Bio,
-		School:  req.School,
-		Company: req.Company,
+		Bio:           req.Bio,
+		School:        req.School,
+		Company:       req.Company,
+		TechnicalTags: req.TechnicalTags,
 	})
 	if errors.Is(err, ErrInvalidInput) {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "个人资料不合法", nil)

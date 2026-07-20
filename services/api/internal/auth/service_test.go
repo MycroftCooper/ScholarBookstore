@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,9 +14,10 @@ import (
 )
 
 type fakeUserRepo struct {
-	created users.User
-	byEmail users.User
-	byID    users.User
+	created      users.User
+	byEmail      users.User
+	byID         users.User
+	profileInput users.UpdateProfileInput
 }
 
 func (r *fakeUserRepo) Create(_ context.Context, username string, email string, passwordHash string) (users.User, error) {
@@ -52,6 +54,8 @@ func (r *fakeUserRepo) UpdateProfile(_ context.Context, id int64, input users.Up
 	r.byID.Bio = input.Bio
 	r.byID.School = input.School
 	r.byID.Company = input.Company
+	r.byID.TechnicalTags = input.TechnicalTags
+	r.profileInput = input
 	return r.byID, nil
 }
 
@@ -111,6 +115,51 @@ func TestLoginRejectsDisabledUser(t *testing.T) {
 	_, err = service.Login(context.Background(), "alice@example.com", "password123")
 	if !errors.Is(err, ErrUserDisabled) {
 		t.Fatalf("expected ErrUserDisabled, got %v", err)
+	}
+}
+
+func TestUpdateProfileNormalizesTechnicalTags(t *testing.T) {
+	repo := &fakeUserRepo{byID: users.User{ID: 1, Username: "alice"}}
+	service := NewService(testConfig(), repo)
+
+	updated, err := service.UpdateProfile(context.Background(), 1, users.UpdateProfileInput{
+		TechnicalTags: []string{" Go ", "go", "", " 游戏开发 ", "GO"},
+	})
+	if err != nil {
+		t.Fatalf("update profile: %v", err)
+	}
+	want := []string{"Go", "游戏开发"}
+	if len(updated.TechnicalTags) != len(want) {
+		t.Fatalf("technical tags = %#v, want %#v", updated.TechnicalTags, want)
+	}
+	for i := range want {
+		if updated.TechnicalTags[i] != want[i] {
+			t.Fatalf("technical tags = %#v, want %#v", updated.TechnicalTags, want)
+		}
+	}
+}
+
+func TestUpdateProfileRejectsTooManyTechnicalTags(t *testing.T) {
+	service := NewService(testConfig(), &fakeUserRepo{})
+	tags := make([]string, 11)
+	for i := range tags {
+		tags[i] = string(rune('a' + i))
+	}
+
+	_, err := service.UpdateProfile(context.Background(), 1, users.UpdateProfileInput{TechnicalTags: tags})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestUpdateProfileRejectsLongTechnicalTag(t *testing.T) {
+	service := NewService(testConfig(), &fakeUserRepo{})
+
+	_, err := service.UpdateProfile(context.Background(), 1, users.UpdateProfileInput{
+		TechnicalTags: []string{strings.Repeat("游", maxTechnicalTagLength+1)},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }
 

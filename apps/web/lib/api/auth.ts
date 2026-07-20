@@ -10,6 +10,7 @@ export type CurrentUser = {
   bio: string;
   school: string;
   company: string;
+  technicalTags: string[];
   createdAt: string;
 };
 
@@ -35,6 +36,7 @@ export function updateProfile(input: {
   bio: string;
   school: string;
   company: string;
+  technicalTags: string[];
 }) {
   return apiRequest<CurrentUser>("/me/profile", {
     method: "PATCH",

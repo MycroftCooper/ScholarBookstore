@@ -13,9 +13,7 @@ export type CommentItem = {
   visibility: "visible" | "hidden";
   deleted: boolean;
   upVotes: number;
-  downVotes: number;
-  score: number;
-  myVote: -1 | 0 | 1;
+  myVote: 0 | 1;
   createdAt: string;
   updatedAt: string;
 };
@@ -64,7 +62,7 @@ export function deleteComment(commentId: number) {
   });
 }
 
-export function voteComment(commentId: number, value: -1 | 0 | 1) {
+export function voteComment(commentId: number, value: 0 | 1) {
   return apiRequest<CommentItem>(`/comments/${commentId}/vote`, {
     method: "PUT",
     body: JSON.stringify({ value }),

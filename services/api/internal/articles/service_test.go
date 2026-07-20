@@ -51,11 +51,11 @@ func (r *fakeArticleRepo) IncrementViewCount(_ context.Context, id int64) error 
 	return nil
 }
 
-func (r *fakeArticleRepo) SetVote(_ context.Context, articleID int64, userID int64, value int) (Article, error) {
-	if articleID != 1 || userID <= 0 || value != 1 {
+func (r *fakeArticleRepo) SetVote(_ context.Context, articleID int64, userID int64) (Article, error) {
+	if articleID != 1 || userID <= 0 {
 		return Article{}, ErrNotFound
 	}
-	return Article{ID: articleID, Title: "published", Status: "published", MyVote: value, UpVotes: 1}, nil
+	return Article{ID: articleID, Title: "published", Status: "published", MyVote: 1, UpVotes: 1}, nil
 }
 
 func (r *fakeArticleRepo) ClearVote(_ context.Context, articleID int64, userID int64) (Article, error) {
@@ -381,8 +381,17 @@ func TestVoteArticleSetsVote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("vote article: %v", err)
 	}
-	if article.MyVote != 1 || article.UpVotes != 1 || article.Score != 1 {
+	if article.MyVote != 1 || article.UpVotes != 1 {
 		t.Fatalf("unexpected vote result: %#v", article)
+	}
+}
+
+func TestVoteArticleRejectsDownvote(t *testing.T) {
+	service := NewService(&fakeArticleRepo{})
+
+	_, err := service.Vote(context.Background(), 1, 2, -1)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }
 

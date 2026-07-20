@@ -18,7 +18,7 @@
 | `/admin/domains` | 领域管理 | admin |
 | `/admin/users` | 用户管理 | admin |
 | `/admin/tags` | Tag 管理 | admin |
-| `/admin/tasks` | 待办事项（文章审核 / 举报处理 / 角色申请） | reviewer+ |
+| `/admin/tasks` | 待办事项（文章审核 / 举报处理） | reviewer+ |
 | `/admin/dashboard` | 数据看板 | reviewer+ |
 | `/admin/error-logs` | 错误日志 | admin |
 
@@ -296,7 +296,7 @@ admin 管理全站 Tag（仅 admin 可访问）。
 
 ### 9.1 功能
 
-审核员在统一待办页处理文章审核、举报处理、角色申请等任务。原独立 `/admin/reports` 页面已删除；举报任务以 `content_report` 类型并入 `/admin/tasks`。
+审核员在统一待办页处理文章审核和举报任务。领主、版主和全局角色由管理员在角色管理后台直接任命或撤销，不经过待办流程。原独立 `/admin/reports` 页面已删除；举报任务以 `content_report` 类型并入 `/admin/tasks`。
 
 ### 9.2 举报处理
 

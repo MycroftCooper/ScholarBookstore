@@ -78,6 +78,7 @@
 | `bio` | `varchar(200)` | not null default '' | 个人简介 |
 | `school` | `varchar(100)` | not null default '' | 学校 |
 | `company` | `varchar(100)` | not null default '' | 公司 |
+| `technical_tags` | `text[]` | not null default '{}' | 用户自填技术标签，与文章标签体系独立 |
 | `created_at` | `timestamptz` | not null | 创建时间 |
 | `updated_at` | `timestamptz` | not null | 更新时间 |
 | `deleted_at` | `timestamptz` | null | 软删除时间 |
@@ -93,6 +94,8 @@
 
 - 邮箱和用户名比较必须大小写不敏感。
 - 禁用用户不能登录。
+- `technical_tags` 最多 10 项；每项去除首尾空格后为 1-30 个字符，并按小写值去重。
+- 技术标签只用于个人资料编辑与公开作者主页展示，不关联 `tags`、`article_tags` 或文章搜索排序。
 
 ### 3.2 domains
 
@@ -255,14 +258,14 @@
 
 ### 3.6a comment_votes
 
-评论赞踩表。每个用户对同一条评论最多保留一条赞或踩记录。
+评论点赞表。每个用户对同一条评论最多保留一条点赞记录。
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `bigserial` | PK | 赞踩 ID |
-| `comment_id` | `bigint` | FK comments(id), not null | 被赞踩的评论 |
+| `id` | `bigserial` | PK | 点赞 ID |
+| `comment_id` | `bigint` | FK comments(id), not null | 被点赞的评论 |
 | `user_id` | `bigint` | FK users(id), not null | 操作用户 |
-| `value` | `smallint` | not null | `1` 表示赞，`-1` 表示踩 |
+| `value` | `smallint` | not null, check (`value = 1`) | 固定为 `1`，表示点赞 |
 | `created_at` | `timestamptz` | not null | 创建时间 |
 | `updated_at` | `timestamptz` | not null | 更新时间 |
 
@@ -270,13 +273,34 @@
 
 - `unique index comment_votes_comment_user_unique on comment_votes (comment_id, user_id)`
 - `index comment_votes_user_created_idx on comment_votes (user_id, created_at desc)`
-- `index comment_votes_comment_value_idx on comment_votes (comment_id, value)`
 
 说明：
 
-- 再次点击同一种赞/踩时前端传 `value = 0`，后端删除该用户的赞踩记录。
-- 从赞切换到踩或从踩切换到赞时，后端更新同一条记录。
-- 只能对可见、未删除且所属文章已发布的评论赞踩，不可对自己的评论投票。
+- 再次点击点赞时前端传 `value = 0`，后端删除该用户的点赞记录。
+- 只能对可见、未删除且所属文章已发布的评论点赞，不可点赞自己的评论。
+
+### 3.6b article_votes
+
+文章点赞表。每个用户对同一篇文章最多保留一条点赞记录。
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `bigserial` | PK | 点赞 ID |
+| `article_id` | `bigint` | FK articles(id), not null | 被点赞的文章 |
+| `user_id` | `bigint` | FK users(id), not null | 操作用户 |
+| `value` | `smallint` | not null, check (`value = 1`) | 固定为 `1`，表示点赞 |
+| `created_at` | `timestamptz` | not null | 创建时间 |
+| `updated_at` | `timestamptz` | not null | 更新时间 |
+
+索引：
+
+- `unique index article_votes_article_user_unique on article_votes (article_id, user_id)`
+- `index article_votes_user_created_idx on article_votes (user_id, created_at desc)`
+
+说明：
+
+- 请求 `value = 1` 时创建点赞，`value = 0` 时删除当前用户的点赞记录。
+- 只能点赞已发布且所属领域、版块有效的他人文章。
 
 ### 3.6 notifications
 
@@ -533,7 +557,7 @@
 
 核心字段：
 
-- `task_type`：`article_review`、`content_report`、`comment_report` 等。
+- `task_type`：`article_review`、`content_report`、`comment_report`、`user_report`、`appeal`、`module_create_request`。
 - `object_type` / `object_id`：关联对象，当前第一版使用 `article` 和 `article_report`。
 - `domain_id` / `module_id`：权限范围字段，后端查询和处理动作必须按这两个字段校验 scope。
 - `status`：`pending`、`processing`、`approved`、`rejected`、`resolved`、`ignored`、`cancelled`。

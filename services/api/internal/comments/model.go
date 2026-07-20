@@ -15,7 +15,6 @@ type Comment struct {
 	Visibility      string
 	Deleted         bool
 	UpVotes         int64
-	DownVotes       int64
 	MyVote          int
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
@@ -34,8 +33,6 @@ type PublicComment struct {
 	Visibility      string    `json:"visibility"`
 	Deleted         bool      `json:"deleted"`
 	UpVotes         int64     `json:"upVotes"`
-	DownVotes       int64     `json:"downVotes"`
-	Score           int64     `json:"score"`
 	MyVote          int       `json:"myVote"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
@@ -73,8 +70,6 @@ func ToPublic(comment Comment) PublicComment {
 		Visibility:      comment.Visibility,
 		Deleted:         comment.Deleted,
 		UpVotes:         comment.UpVotes,
-		DownVotes:       comment.DownVotes,
-		Score:           comment.UpVotes - comment.DownVotes,
 		MyVote:          comment.MyVote,
 		CreatedAt:       comment.CreatedAt,
 		UpdatedAt:       comment.UpdatedAt,
